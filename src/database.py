@@ -1,16 +1,23 @@
 import sqlite3
 import os
 
-# กำหนด Path ให้ไฟล์ .db อยู่ในโฟลเดอร์เดียวกับไฟล์นี้เสมอ
+# 1. กำหนด Path ให้อ้างอิงจากโฟลเดอร์หลักเสมอ
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "data", "urine_records.db")
+DB_DIR = os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(DB_DIR, "urine_records.db")
 
 def init_db():
-    """สร้างตารางและอัปเดตโครงสร้างอัตโนมัติ (Auto Migration)"""
+    """สร้างโฟลเดอร์ ตาราง และอัปเดตโครงสร้างอัตโนมัติ (Auto Migration)"""
+    
+    # 2. 🌟 เช็คและสร้างโฟลเดอร์ data/ อัตโนมัติ (หัวใจสำคัญที่แก้ Error บน Render)
+    if not os.path.exists(DB_DIR):
+        os.makedirs(DB_DIR)
+        print("⚙️ [Setup] สร้างโฟลเดอร์ data/ สำหรับเก็บ Database อัตโนมัติเรียบร้อย")
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 1. สร้างตารางหลัก (ถ้ายังไม่มี)
+    # 3. สร้างตารางหลัก (ถ้ายังไม่มี)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +36,7 @@ def init_db():
         )
     ''')
     
-    # 2. ตรวจสอบว่ามีคอลัมน์ 'notes' หรือยัง (ถ้ายังไม่มีให้เพิ่มเข้าไป)
+    # 4. ตรวจสอบว่ามีคอลัมน์ 'notes' หรือยัง (Auto Migration)
     cursor.execute("PRAGMA table_info(records)")
     columns = [col[1] for col in cursor.fetchall()]
     
