@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 # นำเข้าโมดูลฐานข้อมูล (ที่เชื่อมกับ Supabase แล้ว)
-from src import database
+from src import db_handler
 
 # โหลด Environment Variables
 load_dotenv()
@@ -165,10 +165,10 @@ def process_image_with_ai(image_id, user_id, patient_name):
         u_leukocytes = data.get('leukocytes', 'N/A')
         u_ascorbic_acid = data.get('ascorbic_acid', 'N/A')
 
-        success = database.insert_record(
-            date=date_str, urobilinogen=u_urobilinogen, glucose=u_glucose, 
-            bilirubin=u_bilirubin, ketones=u_ketones, specific_gravity=u_sg, 
-            blood=u_blood, ph=u_ph, protein=u_protein, nitrite=u_nitrite, 
+        success = db_handler.insert_record(
+            date=date_str, urobilinogen=u_urobilinogen, glucose=u_glucose,
+            bilirubin=u_bilirubin, ketones=u_ketones, specific_gravity=u_sg,
+            blood=u_blood, ph=u_ph, protein=u_protein, nitrite=u_nitrite,
             leukocytes=u_leukocytes, ascorbic_acid=u_ascorbic_acid, notes=patient_name
         )
 
