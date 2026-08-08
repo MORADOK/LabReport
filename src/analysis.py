@@ -26,4 +26,25 @@ def load_data():
         if conn:
             conn.close()
 
-# (ฟังก์ชัน create_trend_chart ด้านล่างยังคงใช้โค้ดเดิมได้เลยครับ ไม่ต้องแก้)
+def create_trend_chart(df, patient_name, param_col, title_name):
+    """ฟังก์ชันสร้างกราฟแนวโน้ม (Trend Chart) ด้วย Plotly"""
+    patient_df = df[df['notes'] == patient_name].copy()
+
+    if patient_df.empty or param_col not in patient_df.columns:
+        return None
+
+    # แปลงคอลัมน์นั้นๆ ให้เป็นตัวเลข
+    patient_df[param_col] = pd.to_numeric(patient_df[param_col], errors='coerce')
+
+    fig = px.line(
+        patient_df,
+        x='date',
+        y=param_col,
+        markers=True,
+        title=f"แนวโน้ม {title_name} ของคนไข้: {patient_name}",
+        labels={'date': 'วันที่ตรวจ', param_col: title_name},
+        template="plotly_white"
+    )
+    # เพิ่มลูกเล่นให้เส้นกราฟ
+    fig.update_traces(line=dict(width=3), marker=dict(size=8))
+    return fig
