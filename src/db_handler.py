@@ -1,5 +1,7 @@
 import os
 import psycopg2
+import time
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 # โหลดตัวแปรจากไฟล์ .env (สำหรับการรัน Local)
@@ -8,11 +10,43 @@ load_dotenv()
 # ดึง URL ฐานข้อมูลของ Supabase จาก Environment Variable
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-def get_connection():
-    """ฟังก์ชันจัดการ Connection ไปยัง PostgreSQL"""
+def get_connection(retries=3, retry_delay=2):
+    """ฟังก์ชันจัดการ Connection ไปยัง PostgreSQL (แก้ปัญหา IPv6 + Retry Logic)"""
     if not DATABASE_URL:
-        raise ValueError("❌ ไม่พบ DATABASE_URL กรุณาใส่ URL ของ Supabase ในไฟล์ .env")
-    return psycopg2.connect(DATABASE_URL)
+        raise ValueError("[Error] DATABASE_URL not found in .env file")
+
+    last_error = None
+    for attempt in range(retries):
+        try:
+            # Parse URL
+            parsed = urlparse(DATABASE_URL)
+
+            # สร้าง connection แบบใช้พารามิเตอร์แยกเพื่อควบคุม connection ได้ดีกว่า
+            conn = psycopg2.connect(
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                user=parsed.username,
+                password=parsed.password,
+                database=parsed.path.lstrip('/'),
+                connect_timeout=15,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5
+            )
+            return conn
+        except (psycopg2.OperationalError, Exception) as e:
+            last_error = e
+            if attempt < retries - 1:
+                print(f"[Retry {attempt + 1}/{retries}] Connection failed, retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+            else:
+                # Fallback: ลองใช้ connection string ปกติ
+                try:
+                    print(f"[Fallback] Trying direct connection string...")
+                    return psycopg2.connect(DATABASE_URL, connect_timeout=15)
+                except Exception as fallback_error:
+                    raise ConnectionError(f"[Connection Failed] All connection attempts failed. Last error: {last_error}")
 
 def init_db():
     """สร้างตารางและอัปเดตโครงสร้างอัตโนมัติ (Auto Migration)"""
@@ -50,15 +84,15 @@ def init_db():
         ''')
 
         if not cursor.fetchone():
-            print("⚙️ [Auto Migration] กำลังเพิ่มคอลัมน์ 'notes' ลงใน PostgreSQL...")
+            print("[Auto Migration] Adding 'notes' column to PostgreSQL...")
             cursor.execute("ALTER TABLE records ADD COLUMN notes TEXT DEFAULT ''")
-            print("✅ อัปเดตโครงสร้างฐานข้อมูลสำเร็จ!")
+            print("[Success] Database structure updated!")
 
         conn.commit()
-        print("🟢 [Setup] เชื่อมต่อฐานข้อมูล Supabase สำเร็จ พร้อมใช้งาน!")
+        print("[Setup] Connected to Supabase database successfully!")
 
     except Exception as e:
-        print(f"❌ [DB Error] เกิดข้อผิดพลาดในการตั้งค่าฐานข้อมูล: {e}")
+        print(f"[DB Error] Database setup failed: {e}")
     finally:
         if conn:
             cursor.close()
@@ -88,7 +122,7 @@ def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_grav
         conn.commit()
         return True
     except Exception as e:
-        print(f"❌ [Insert Error] เกิดข้อผิดพลาดตอนบันทึกข้อมูล: {e}")
+        print(f"[Insert Error] Failed to insert record: {e}")
         return False
     finally:
         if conn:

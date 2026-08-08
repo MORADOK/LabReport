@@ -2,6 +2,7 @@ import pandas as pd
 import psycopg2
 import os
 import plotly.express as px
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,12 +11,25 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 def load_data():
     """โหลดข้อมูลจาก PostgreSQL (Supabase) เป็น Pandas DataFrame"""
     if not DATABASE_URL:
-        print("❌ ไม่พบ DATABASE_URL สำหรับดึงข้อมูลเข้า Dashboard")
+        print("[Error] DATABASE_URL not found for loading dashboard data")
         return pd.DataFrame()
-        
+
     conn = None
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        # แก้ปัญหา IPv6 network unreachable โดยใช้พารามิเตอร์แยก
+        parsed = urlparse(DATABASE_URL)
+        conn = psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            user=parsed.username,
+            password=parsed.password,
+            database=parsed.path.lstrip('/'),
+            connect_timeout=15,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5
+        )
         # ดึงข้อมูลจากฐานข้อมูลมาใส่ใน DataFrame ทันที
         df = pd.read_sql("SELECT * FROM records ORDER BY date DESC", conn)
         return df
