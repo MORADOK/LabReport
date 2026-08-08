@@ -1,0 +1,15 @@
+[theme]
+# สีหลัก (ปุ่ม, แถบเลือก, กราฟ) เน้นโทน Medical Blue
+primaryColor = "#0066cc"
+
+# สีพื้นหลังหน้าเว็บ (สีเทาอ่อน สบายตา)
+backgroundColor = "#f4f7f6"
+
+# สีพื้นหลังของ Sidebar และ Card ต่างๆ (สีขาวล้วน ดูสะอาด)
+secondaryBackgroundColor = "#ffffff"
+
+# สีตัวอักษร
+textColor = "#1e293b"
+
+# ฟอนต์ (เรียบหรู ทันสมัย)
+font = "sans serif"
