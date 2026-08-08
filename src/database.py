@@ -1,74 +1,99 @@
-import sqlite3
 import os
+import psycopg2
+from dotenv import load_dotenv
 
-# 1. กำหนด Path ให้อ้างอิงจากโฟลเดอร์หลักเสมอ
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DB_DIR, "urine_records.db")
+# โหลดตัวแปรจากไฟล์ .env (สำหรับการรัน Local)
+load_dotenv()
+
+# ดึง URL ฐานข้อมูลของ Supabase จาก Environment Variable
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def get_connection():
+    """ฟังก์ชันจัดการ Connection ไปยัง PostgreSQL"""
+    if not DATABASE_URL:
+        raise ValueError("❌ ไม่พบ DATABASE_URL กรุณาใส่ URL ของ Supabase ในไฟล์ .env")
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
-    """สร้างโฟลเดอร์ ตาราง และอัปเดตโครงสร้างอัตโนมัติ (Auto Migration)"""
-    
-    # 2. 🌟 เช็คและสร้างโฟลเดอร์ data/ อัตโนมัติ (หัวใจสำคัญที่แก้ Error บน Render)
-    if not os.path.exists(DB_DIR):
-        os.makedirs(DB_DIR)
-        print("⚙️ [Setup] สร้างโฟลเดอร์ data/ สำหรับเก็บ Database อัตโนมัติเรียบร้อย")
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # 3. สร้างตารางหลัก (ถ้ายังไม่มี)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            urobilinogen TEXT,
-            glucose TEXT,
-            bilirubin TEXT,
-            ketones TEXT,
-            specific_gravity REAL,
-            blood TEXT,
-            ph REAL,
-            protein TEXT,
-            nitrite TEXT,
-            leukocytes TEXT,
-            ascorbic_acid TEXT
-        )
-    ''')
-    
-    # 4. ตรวจสอบว่ามีคอลัมน์ 'notes' หรือยัง (Auto Migration)
-    cursor.execute("PRAGMA table_info(records)")
-    columns = [col[1] for col in cursor.fetchall()]
-    
-    if 'notes' not in columns:
-        print("⚙️ [Auto Migration] กำลังเพิ่มคอลัมน์ 'notes' ลงในฐานข้อมูล...")
-        cursor.execute("ALTER TABLE records ADD COLUMN notes TEXT DEFAULT ''")
-        print("✅ อัปเดตโครงสร้างฐานข้อมูลสำเร็จ!")
+    """สร้างตารางและอัปเดตโครงสร้างอัตโนมัติ (Auto Migration)"""
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
         
-    conn.commit()
-    conn.close()
+        # 1. สร้างตารางหลัก (ใช้ SERIAL แทน AUTOINCREMENT)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS records (
+                id SERIAL PRIMARY KEY,
+                date TIMESTAMP,
+                urobilinogen VARCHAR(50),
+                glucose VARCHAR(50),
+                bilirubin VARCHAR(50),
+                ketones VARCHAR(50),
+                specific_gravity REAL,
+                blood VARCHAR(50),
+                ph REAL,
+                protein VARCHAR(50),
+                nitrite VARCHAR(50),
+                leukocytes VARCHAR(50),
+                ascorbic_acid VARCHAR(50),
+                notes TEXT DEFAULT ''
+            )
+        ''')
+        
+        # 2. ตรวจสอบว่ามีคอลัมน์ 'notes' หรือยัง 
+        # (PostgreSQL ใช้ information_schema ในการเช็คคอลัมน์)
+        cursor.execute('''
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='records' AND column_name='notes';
+        ''')
+        
+        if not cursor.fetchone():
+            print("⚙️ [Auto Migration] กำลังเพิ่มคอลัมน์ 'notes' ลงใน PostgreSQL...")
+            cursor.execute("ALTER TABLE records ADD COLUMN notes TEXT DEFAULT ''")
+            print("✅ อัปเดตโครงสร้างฐานข้อมูลสำเร็จ!")
+            
+        conn.commit()
+        print("🟢 [Setup] เชื่อมต่อฐานข้อมูล Supabase สำเร็จ พร้อมใช้งาน!")
+        
+    except Exception as e:
+        print(f"❌ [DB Error] เกิดข้อผิดพลาดในการตั้งค่าฐานข้อมูล: {e}")
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
 def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes=""):
     """ฟังก์ชันบันทึกผลตรวจลง Database"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    query = '''
-        INSERT INTO records (
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # PostgreSQL ใช้ %s ในการส่งค่าตัวแปร
+        query = '''
+            INSERT INTO records (
+                date, urobilinogen, glucose, bilirubin, ketones, 
+                specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        '''
+        
+        values = (
             date, urobilinogen, glucose, bilirubin, ketones, 
             specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    '''
-    
-    values = (
-        date, urobilinogen, glucose, bilirubin, ketones, 
-        specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes
-    )
-    
-    cursor.execute(query, values)
-    conn.commit()
-    conn.close()
-    return True
+        )
+        
+        cursor.execute(query, values)
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"❌ [Insert Error] เกิดข้อผิดพลาดตอนบันทึกข้อมูล: {e}")
+        return False
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
-# เรียกใช้งานตอนโหลดไฟล์ เพื่อตรวจสอบและอัปเดต DB ทันที
+# ตรวจสอบและสร้างฐานข้อมูลทันทีเมื่อไฟล์ถูกเรียกใช้
 init_db()
