@@ -92,8 +92,23 @@ st.markdown("""
 # ========================================
 # 📊 Load Data
 # ========================================
+@st.cache_data(ttl=60)  # Cache for 60 seconds
+def get_data():
+    """Load data with caching"""
+    return load_data()
+
 with st.spinner("🔄 กำลังโหลดข้อมูล..."):
-    df = load_data()
+    df = get_data()
+
+# Show connection status
+if df.empty:
+    st.sidebar.warning("⚠️ Database Connection")
+    st.sidebar.caption("ไม่สามารถโหลดข้อมูลได้ อาจเป็นเพราะ:")
+    st.sidebar.caption("• Network connection issue")
+    st.sidebar.caption("• ยังไม่มีข้อมูลในระบบ")
+    st.sidebar.caption("• RLS policy configuration")
+else:
+    st.sidebar.success(f"✅ Connected: {len(df)} records")
 
 # ========================================
 # 🎨 Header Section
@@ -105,15 +120,73 @@ st.markdown('<p class="sub-header">ระบบวิเคราะห์ผล
 # 📈 Main Dashboard
 # ========================================
 if df.empty:
-    st.info("📭 ยังไม่มีข้อมูลในระบบ")
-    st.markdown("""
-    ### วิธีการใช้งาน:
-    1. 🤖 เพิ่มเพื่อน LINE Bot
-    2. 📸 ส่งรูปแผ่นตรวจปัสสาวะ
-    3. 📝 ระบุชื่อ-นามสกุลผู้ป่วย
-    4. ✅ รอระบบวิเคราะห์และบันทึกข้อมูล
-    5. 📊 ดูผลการตรวจที่ Dashboard นี้
-    """)
+    st.warning("⚠️ ไม่สามารถโหลดข้อมูลจาก Database")
+
+    # Troubleshooting Section
+    with st.expander("🔧 วิธีแก้ไขปัญหา", expanded=True):
+        st.markdown("""
+        ### สาเหตุที่เป็นไปได้:
+
+        **1. ยังไม่มีข้อมูลในระบบ**
+        - ✅ ทดสอบส่งข้อมูลผ่าน LINE Bot ก่อน
+
+        **2. ปัญหาการเชื่อมต่อ Database**
+        - ตรวจสอบ `DATABASE_URL` ใน `.env`
+        - ตรวจสอบ network connection
+        - ตรวจสอบ Supabase service status
+
+        **3. RLS Policy Configuration**
+        - RLS อาจบล็อกการเข้าถึงข้อมูล
+        - ตรวจสอบว่า policy สำหรับ service role ตั้งค่าถูกต้อง
+        - ลองรัน: `python -c "from src import db_handler"`
+
+        **4. ทดสอบบน Production (Streamlit Cloud)**
+        - ปัญหาอาจเกิดเฉพาะใน local environment
+        - Streamlit Cloud มี network connection ที่ดีกว่า
+        - ลอง deploy และทดสอบบน cloud
+        """)
+
+    # วิธีการใช้งาน
+    st.markdown("---")
+    st.markdown("### 📝 วิธีการใช้งานระบบ:")
+
+    col_step1, col_step2, col_step3 = st.columns(3)
+
+    with col_step1:
+        st.info("""
+        **1️⃣ เพิ่มเพื่อน LINE Bot**
+
+        Scan QR Code หรือเพิ่มเพื่อน LINE Bot ของระบบ
+        """)
+
+    with col_step2:
+        st.info("""
+        **2️⃣ ส่งรูปและข้อมูล**
+
+        • ส่งรูปแผ่นตรวจปัสสาวะ
+        • ระบุชื่อ-นามสกุลผู้ป่วย
+        """)
+
+    with col_step3:
+        st.info("""
+        **3️⃣ ดูผลที่ Dashboard**
+
+        ระบบจะวิเคราะห์และแสดงผลที่นี่อัตโนมัติ
+        """)
+
+    # Technical Details
+    st.markdown("---")
+    with st.expander("🔍 ข้อมูลทางเทคนิค"):
+        st.code("""
+# ตรวจสอบการเชื่อมต่อ
+python -c "from src.analysis import load_data; print(load_data())"
+
+# ตรวจสอบ database handler
+python -c "from src import db_handler; print('OK')"
+
+# ตรวจสอบ environment variables
+python -c "import os; from dotenv import load_dotenv; load_dotenv(); print('DB:', bool(os.getenv('DATABASE_URL')))"
+        """, language="bash")
 else:
     # ========================================
     # 🎯 KPI Metrics Section
