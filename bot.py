@@ -144,6 +144,7 @@ def process_image_with_ai(image_id, user_id, patient_name):
                     ]
                 }
             ],
+            max_tokens=2048,  # ลด max_tokens เพื่อประหยัด credits
             response_format={"type": "json_object"}
         )
 
@@ -193,7 +194,19 @@ def process_image_with_ai(image_id, user_id, patient_name):
 
     except Exception as e:
         logging.error(f"Error processing image: {e}")
+
+        # กำหนดข้อความ error ที่เหมาะสมตามประเภทของ error
+        error_message = "❌ ขออภัยครับ เกิดข้อผิดพลาดในการวิเคราะห์ภาพ กรุณาลองใหม่อีกครั้ง"
+
+        # ตรวจสอบว่าเป็น OpenRouter API error หรือไม่
+        if "402" in str(e) or "credits" in str(e).lower():
+            error_message = "❌ ระบบ AI ไม่สามารถประมวลผลได้ในขณะนี้ (ปัญหา credits)\nกรุณาติดต่อผู้ดูแลระบบครับ"
+        elif "401" in str(e) or "unauthorized" in str(e).lower():
+            error_message = "❌ ระบบ AI มีปัญหาการยืนยันตัวตน กรุณาติดต่อผู้ดูแลระบบครับ"
+        elif "timeout" in str(e).lower():
+            error_message = "❌ ระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้งครับ"
+
         line_bot_api.push_message(
             user_id,
-            TextSendMessage(text="❌ ขออภัยครับ เกิดข้อผิดพลาดในการวิเคราะห์ภาพ กรุณาลองใหม่อีกครั้ง")
+            TextSendMessage(text=error_message)
         )
