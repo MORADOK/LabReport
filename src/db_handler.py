@@ -34,22 +34,31 @@ def get_connection(retries=3, retry_delay=2):
             # Parse URL
             parsed = urlparse(DATABASE_URL)
 
-            # บังคับให้ใช้ IPv4 address
-            ipv4_host = force_ipv4_dns(parsed.hostname)
-            print(f"[DNS] Resolved {parsed.hostname} to {ipv4_host}")
+            # ตรวจสอบว่าใช้ pooler หรือไม่ (ต้องใช้ hostname เพื่อ SNI)
+            is_pooler = 'pooler' in parsed.hostname
+
+            if is_pooler:
+                # Pooler: ต้องใช้ hostname สำหรับ SNI (ไม่ resolve เป็น IP)
+                host = parsed.hostname
+                print(f"[Pooler] Using hostname {host} for SNI support")
+            else:
+                # Direct connection: ใช้ IPv4 address
+                host = force_ipv4_dns(parsed.hostname)
+                print(f"[DNS] Resolved {parsed.hostname} to {host}")
 
             # สร้าง connection แบบใช้พารามิเตอร์แยกเพื่อควบคุม connection ได้ดีกว่า
             conn = psycopg2.connect(
-                host=ipv4_host,  # ใช้ IPv4 address แทน hostname
+                host=host,
                 port=parsed.port or 5432,
                 user=parsed.username,
                 password=parsed.password,
-                database=parsed.path.lstrip('/'),
+                database=parsed.path.lstrip('/').split('?')[0],  # Remove query params
                 connect_timeout=15,
                 keepalives=1,
                 keepalives_idle=30,
                 keepalives_interval=10,
-                keepalives_count=5
+                keepalives_count=5,
+                sslmode='require' if is_pooler else 'prefer'
             )
             return conn
         except (psycopg2.OperationalError, Exception) as e:

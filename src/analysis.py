@@ -31,20 +31,28 @@ def load_data():
         # แก้ปัญหา IPv6 network unreachable โดยใช้พารามิเตอร์แยก
         parsed = urlparse(DATABASE_URL)
 
-        # บังคับให้ใช้ IPv4 address
-        ipv4_host = force_ipv4_dns(parsed.hostname)
+        # ตรวจสอบว่าใช้ pooler หรือไม่ (ต้องใช้ hostname เพื่อ SNI)
+        is_pooler = 'pooler' in parsed.hostname if parsed.hostname else False
+
+        if is_pooler:
+            # Pooler: ต้องใช้ hostname สำหรับ SNI
+            host = parsed.hostname
+        else:
+            # Direct connection: ใช้ IPv4 address
+            host = force_ipv4_dns(parsed.hostname)
 
         conn = psycopg2.connect(
-            host=ipv4_host,  # ใช้ IPv4 address แทน hostname
+            host=host,
             port=parsed.port or 5432,
             user=parsed.username,
             password=parsed.password,
-            database=parsed.path.lstrip('/'),
+            database=parsed.path.lstrip('/').split('?')[0],  # Remove query params
             connect_timeout=15,
             keepalives=1,
             keepalives_idle=30,
             keepalives_interval=10,
-            keepalives_count=5
+            keepalives_count=5,
+            sslmode='require' if is_pooler else 'prefer'
         )
         # ดึงข้อมูลจากฐานข้อมูลมาใส่ใน DataFrame ทันที
         df = pd.read_sql("SELECT * FROM records ORDER BY date DESC", conn)
