@@ -110,20 +110,37 @@ def init_db():
         ''')
 
         # 2. ตรวจสอบว่ามีคอลัมน์ 'notes' หรือยัง
-        # (PostgreSQL ใช้ information_schema ในการเช็คคอลัมน์)
         cursor.execute('''
             SELECT column_name
             FROM information_schema.columns
             WHERE table_name='records' AND column_name='notes';
         ''')
-
         if not cursor.fetchone():
             print("[Auto Migration] Adding 'notes' column to PostgreSQL...")
             cursor.execute("ALTER TABLE records ADD COLUMN notes TEXT DEFAULT ''")
-            print("[Success] Database structure updated!")
+
+        # 3. ตรวจสอบและเพิ่มคอลัมน์ 'clinical_summary'
+        cursor.execute('''
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name='records' AND column_name='clinical_summary';
+        ''')
+        if not cursor.fetchone():
+            print("[Auto Migration] Adding 'clinical_summary' column...")
+            cursor.execute("ALTER TABLE records ADD COLUMN clinical_summary TEXT DEFAULT ''")
+
+        # 4. ตรวจสอบและเพิ่มคอลัมน์ 'clinical_bullets'
+        cursor.execute('''
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name='records' AND column_name='clinical_bullets';
+        ''')
+        if not cursor.fetchone():
+            print("[Auto Migration] Adding 'clinical_bullets' column...")
+            cursor.execute("ALTER TABLE records ADD COLUMN clinical_bullets TEXT DEFAULT '[]'")
 
         conn.commit()
-        print("[Setup] Connected to Supabase database successfully!")
+        print("[Success] Database structure updated and connected to Supabase!")
 
     except Exception as e:
         print(f"[DB Error] Database setup failed: {e}")
@@ -132,24 +149,30 @@ def init_db():
             cursor.close()
             conn.close()
 
-def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes=""):
-    """ฟังก์ชันบันทึกผลตรวจลง Database"""
+def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes="", clinical_summary="", clinical_bullets=[]):
+    """ฟังก์ชันบันทึกผลตรวจลง Database พร้อม clinical analysis"""
     conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
 
+        # แปลง list ของ clinical_bullets เป็น JSON string
+        import json
+        bullets_json = json.dumps(clinical_bullets, ensure_ascii=False)
+
         # PostgreSQL ใช้ %s ในการส่งค่าตัวแปร
         query = '''
             INSERT INTO records (
                 date, urobilinogen, glucose, bilirubin, ketones,
-                specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes,
+                clinical_summary, clinical_bullets
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         '''
 
         values = (
             date, urobilinogen, glucose, bilirubin, ketones,
-            specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes
+            specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes,
+            clinical_summary, bullets_json
         )
 
         cursor.execute(query, values)
