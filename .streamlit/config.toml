@@ -13,3 +13,16 @@ textColor = "#1e293b"
 
 # ฟอนต์ (เรียบหรู ทันสมัย)
 font = "sans serif"
+
+[browser]
+# ซ่อน error messages ที่ไม่จำเป็นใน console
+gatherUsageStats = false
+
+[server]
+# เพิ่มความเสถียรของ WebSocket connection
+enableCORS = false
+enableXsrfProtection = true
+
+[logger]
+# ลดระดับ logging เพื่อลด warnings
+level = "error"
