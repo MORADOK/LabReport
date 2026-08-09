@@ -112,23 +112,42 @@ def process_image_with_ai(image_id, user_id, patient_name):
         # 1. อัปเดต System Prompt
         system_prompt = f"""
         คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์แผ่นตรวจปัสสาวะ หน้าที่ของคุณคือ:
+
         1. อ่านค่าจากภาพแผ่น CYBOW 11M โดยเลือกค่าให้ตรงกับมาตรฐานนี้เท่านั้น:
            - urobilinogen: {CYBOW_11M_STANDARDS['urobilinogen']}
            - glucose: {CYBOW_11M_STANDARDS['glucose']}
+           - bilirubin: {CYBOW_11M_STANDARDS['bilirubin']}
+           - ketones: {CYBOW_11M_STANDARDS['ketones']}
+           - specific_gravity: {CYBOW_11M_STANDARDS['specific_gravity']} (ต้องเป็นตัวเลขเท่านั้น เช่น "1.020")
            - blood: {CYBOW_11M_STANDARDS['blood']}
+           - ph: {CYBOW_11M_STANDARDS['ph']} (ต้องเป็นตัวเลขเท่านั้น เช่น "7")
            - protein: {CYBOW_11M_STANDARDS['protein']}
-           (รวมถึงค่าอื่นๆ ให้ครบ 11 พารามิเตอร์)
-           
-        2. เขียน 'clinical_summary' (สรุปผลการตรวจ) เป็นภาษาไทย 1-2 ประโยค 
-        3. เขียน 'clinical_bullets' (ข้อบ่งชี้ทางคลินิกและวิเคราะห์ผล) เป็นภาษาไทยแบบ Array อธิบายเจาะลึกความสัมพันธ์ของพารามิเตอร์ที่ผิดปกติ
+           - nitrite: {CYBOW_11M_STANDARDS['nitrite']}
+           - leukocytes: {CYBOW_11M_STANDARDS['leukocytes']}
+           - ascorbic_acid: {CYBOW_11M_STANDARDS['ascorbic_acid']}
+
+        2. เขียน 'clinical_summary' (สรุปผลการตรวจ) เป็นภาษาไทย 1-2 ประโยค
+        3. เขียน 'clinical_bullets' (ข้อบ่งชี้ทางคลินิกและวิเคราะห์ผล) เป็นภาษาไทยแบบ Array
+
+        ⚠️ สำคัญ:
+        - specific_gravity และ ph ต้องเป็นตัวเลขเท่านั้น (ไม่ใช่คำว่า "normal" หรือ "abnormal")
+        - ใช้ค่าจากมาตรฐานข้างบนเท่านั้น ห้ามสร้างค่าใหม่
 
         ตอบกลับเป็น JSON Format:
         {{
-            "urobilinogen": "...", "glucose": "...", "blood": "...", "protein": "...",
-            "specific_gravity": "...", "ph": "...", "bilirubin": "...", "ketones": "...",
-            "nitrite": "...", "leukocytes": "...", "ascorbic_acid": "...",
-            "clinical_summary": "...",
-            "clinical_bullets": ["ข้อ 1...", "ข้อ 2..."]
+            "urobilinogen": "0.1 Normal",
+            "glucose": "neg.",
+            "bilirubin": "neg.",
+            "ketones": "neg.",
+            "specific_gravity": "1.020",
+            "blood": "neg.",
+            "ph": "7",
+            "protein": "neg.",
+            "nitrite": "neg.",
+            "leukocytes": "neg.",
+            "ascorbic_acid": "neg.",
+            "clinical_summary": "ผลตรวจปัสสาวะอยู่ในเกณฑ์ปกติทุกพารามิเตอร์",
+            "clinical_bullets": ["ไม่พบความผิดปกติ"]
         }}
         """
 
@@ -153,13 +172,27 @@ def process_image_with_ai(image_id, user_id, patient_name):
 
         # 3. จัดเตรียมข้อมูลและบันทึกลง Database
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # ฟังก์ชันแปลงค่าเป็น float อย่างปลอดภัย
+        def safe_float(value, default=0.0):
+            """แปลงค่าเป็น float โดยจัดการกับค่าที่ไม่ใช่ตัวเลข"""
+            if value is None or value == 'N/A':
+                return default
+            try:
+                # ลองแปลงเป็น float
+                return float(value)
+            except (ValueError, TypeError):
+                # ถ้าแปลงไม่ได้ (เช่น "normal", "abnormal") ให้ใช้ค่า default
+                logging.warning(f"Cannot convert '{value}' to float, using default {default}")
+                return default
+
         u_urobilinogen = data.get('urobilinogen', 'N/A')
         u_glucose = data.get('glucose', 'N/A')
         u_bilirubin = data.get('bilirubin', 'N/A')
         u_ketones = data.get('ketones', 'N/A')
-        u_sg = float(data.get('specific_gravity', 0.0)) if data.get('specific_gravity') != 'N/A' else 0.0
+        u_sg = safe_float(data.get('specific_gravity'), 1.020)  # ค่าปกติคือ 1.020
         u_blood = data.get('blood', 'N/A')
-        u_ph = float(data.get('ph', 0.0)) if data.get('ph') != 'N/A' else 0.0
+        u_ph = safe_float(data.get('ph'), 7.0)  # ค่าปกติคือ 7.0
         u_protein = data.get('protein', 'N/A')
         u_nitrite = data.get('nitrite', 'N/A')
         u_leukocytes = data.get('leukocytes', 'N/A')
