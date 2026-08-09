@@ -22,44 +22,46 @@ def force_ipv4_dns(hostname):
 
 def load_data():
     """โหลดข้อมูลจาก PostgreSQL (Supabase) เป็น Pandas DataFrame"""
-    if not DATABASE_URL:
+    if not DATABASE_URL or DATABASE_URL.strip() == "":
         print("[Error] DATABASE_URL not found for loading dashboard data")
+        return pd.DataFrame()
+
+    if DATABASE_URL.startswith('DATABASE_URL='):
+        print("[Error] Invalid DATABASE_URL format")
         return pd.DataFrame()
 
     conn = None
     try:
-        # แก้ปัญหา IPv6 network unreachable โดยใช้พารามิเตอร์แยก
-        parsed = urlparse(DATABASE_URL)
+        # ลองใช้ connection string โดยตรงก่อน (ทำงานได้ดีกับ Supabase)
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=15)
 
-        # ตรวจสอบว่าใช้ pooler หรือไม่ (ต้องใช้ hostname เพื่อ SNI)
-        is_pooler = 'pooler' in parsed.hostname if parsed.hostname else False
-
-        if is_pooler:
-            # Pooler: ต้องใช้ hostname สำหรับ SNI
-            host = parsed.hostname
-        else:
-            # Direct connection: ใช้ IPv4 address
-            host = force_ipv4_dns(parsed.hostname)
-
-        conn = psycopg2.connect(
-            host=host,
-            port=parsed.port or 5432,
-            user=parsed.username,
-            password=parsed.password,
-            database=parsed.path.lstrip('/').split('?')[0],  # Remove query params
-            connect_timeout=15,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5,
-            sslmode='require' if is_pooler else 'prefer'
-        )
         # ดึงข้อมูลจากฐานข้อมูลมาใส่ใน DataFrame ทันที
         df = pd.read_sql("SELECT * FROM records ORDER BY date DESC", conn)
         return df
     except Exception as e:
-        print(f"Error loading data: {e}")
-        return pd.DataFrame()
+        print(f"[Error] Failed to load data: {e}")
+        # Fallback: ลองใช้พารามิเตอร์แยก
+        try:
+            parsed = urlparse(DATABASE_URL)
+            if not parsed.hostname:
+                return pd.DataFrame()
+
+            is_pooler = 'pooler' in parsed.hostname
+
+            conn = psycopg2.connect(
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                user=parsed.username,
+                password=parsed.password,
+                database=parsed.path.lstrip('/').split('?')[0],
+                connect_timeout=15,
+                sslmode='require' if is_pooler else 'prefer'
+            )
+            df = pd.read_sql("SELECT * FROM records ORDER BY date DESC", conn)
+            return df
+        except Exception as fallback_error:
+            print(f"[Error] Fallback also failed: {fallback_error}")
+            return pd.DataFrame()
     finally:
         if conn:
             conn.close()
