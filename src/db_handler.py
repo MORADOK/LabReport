@@ -34,8 +34,12 @@ def get_connection(retries=3, retry_delay=2):
             # Parse URL
             parsed = urlparse(DATABASE_URL)
 
+            # Validate parsed URL
+            if not parsed.hostname:
+                raise ValueError(f"[Error] Invalid DATABASE_URL - hostname is None. URL: {DATABASE_URL[:50]}...")
+
             # ตรวจสอบว่าใช้ pooler หรือไม่ (ต้องใช้ hostname เพื่อ SNI)
-            is_pooler = parsed.hostname and 'pooler' in parsed.hostname
+            is_pooler = 'pooler' in parsed.hostname
 
             if is_pooler:
                 # Pooler: ต้องใช้ hostname สำหรับ SNI (ไม่ resolve เป็น IP)
