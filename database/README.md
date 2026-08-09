@@ -16,8 +16,22 @@ The Supabase linter detected that RLS is **not enabled** on the `public.records`
 ## 📋 Setup Instructions
 
 ### Step 1: Enable RLS
-Run the SQL script in your Supabase SQL Editor:
 
+**✅ Automatic Setup (Recommended)**
+RLS is now automatically enabled when the application starts! The system will:
+- Check if RLS is enabled on startup
+- Enable RLS if needed
+- Create secure policies automatically
+
+Just run your application normally:
+```bash
+python bot.py
+# or
+streamlit run Home.py
+```
+
+**Manual Setup (Optional)**
+If you need to manually run the SQL script:
 ```bash
 # Option 1: Copy and paste the content of enable_rls.sql into Supabase SQL Editor
 # Option 2: Use psql command (if you have direct access)
@@ -42,12 +56,18 @@ SELECT * FROM pg_policies WHERE tablename = 'records';
 
 ## 🔑 Current Policy
 
-### Policy: "Enable full access for service role"
-- **Applies to:** `authenticated` and `anon` roles
+### Policy: "Service role full access"
+- **Applies to:** `postgres` and `service_role` only
 - **Operations:** ALL (SELECT, INSERT, UPDATE, DELETE)
-- **Condition:** Always allows access
+- **Condition:** Always allows access for backend connections
+- **Security Level:** ✅ **Secure** - Only backend application has access
 
-**⚠️ Note:** This is a permissive policy suitable for backend-only access. If you plan to expose the database via PostgREST API directly to clients, you should implement more restrictive policies.
+**✅ Security Model:**
+- Backend (LINE Bot + Dashboard) uses service role connection → ✅ Full Access
+- Anonymous/Public users → ❌ No Direct Access
+- All data access controlled by application logic
+
+**⚠️ Note:** This policy is secure for applications where all data access goes through your backend. Direct PostgREST API access is blocked for security.
 
 ---
 

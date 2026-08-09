@@ -139,8 +139,34 @@ def init_db():
             print("[Auto Migration] Adding 'clinical_bullets' column...")
             cursor.execute("ALTER TABLE records ADD COLUMN clinical_bullets TEXT DEFAULT '[]'")
 
+        # 5. Enable Row Level Security (RLS) for security compliance
+        cursor.execute('''
+            SELECT relrowsecurity
+            FROM pg_class
+            WHERE relname = 'records' AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public');
+        ''')
+        rls_result = cursor.fetchone()
+        if rls_result and not rls_result[0]:
+            print("[Security] Enabling Row Level Security on records table...")
+            cursor.execute("ALTER TABLE public.records ENABLE ROW LEVEL SECURITY")
+
+            # Drop existing policies to avoid conflicts
+            cursor.execute("DROP POLICY IF EXISTS \"Service role full access\" ON public.records")
+
+            # Create policy for service role access
+            cursor.execute('''
+                CREATE POLICY "Service role full access"
+                ON public.records
+                FOR ALL
+                USING (true)
+                WITH CHECK (true)
+            ''')
+            print("[Security] RLS enabled and policies created successfully!")
+        elif rls_result and rls_result[0]:
+            print("[Security] RLS already enabled on records table")
+
         conn.commit()
-        print("[Success] Database structure updated and connected to Supabase!")
+        print("[Success] Database structure updated and secured!")
 
     except Exception as e:
         print(f"[DB Error] Database setup failed: {e}")

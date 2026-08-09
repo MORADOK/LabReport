@@ -3,16 +3,28 @@
 -- ========================================
 -- This script enables RLS and creates policies for the records table
 -- to ensure proper access control and data security.
+--
+-- Security Model:
+-- - Service role (backend) has full access for LINE Bot and Dashboard operations
+-- - Anonymous and authenticated users have NO direct access
+-- - All data access must go through the backend application
 
 -- Enable Row Level Security on records table
 ALTER TABLE public.records ENABLE ROW LEVEL SECURITY;
 
--- Policy 1: Allow service role full access (for backend operations)
--- This allows the backend application (using postgres user) to perform all operations
-CREATE POLICY "Enable full access for service role"
+-- Drop existing policies if any (for clean re-run)
+DROP POLICY IF EXISTS "Enable full access for service role" ON public.records;
+DROP POLICY IF EXISTS "Service role full access" ON public.records;
+
+-- Policy: Allow service role (backend connection) full access only
+-- This is secure because:
+-- 1. Only the backend application can access data
+-- 2. No direct public/anonymous access
+-- 3. Backend controls all business logic and validation
+CREATE POLICY "Service role full access"
 ON public.records
 FOR ALL
-TO authenticated, anon
+TO postgres, service_role
 USING (true)
 WITH CHECK (true);
 
