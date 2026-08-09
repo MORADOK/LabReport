@@ -1,12 +1,24 @@
 import pandas as pd
 import psycopg2
 import os
+import socket
 import plotly.express as px
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# บังคับให้ใช้ IPv4 เท่านั้น (แก้ปัญหา IPv6 network unreachable)
+def force_ipv4_dns(hostname):
+    """Force DNS resolution to IPv4 only"""
+    try:
+        result = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+        if result:
+            return result[0][4][0]
+    except Exception as e:
+        print(f"[DNS] IPv4 resolution failed for {hostname}: {e}")
+    return hostname
 
 def load_data():
     """โหลดข้อมูลจาก PostgreSQL (Supabase) เป็น Pandas DataFrame"""
@@ -18,8 +30,12 @@ def load_data():
     try:
         # แก้ปัญหา IPv6 network unreachable โดยใช้พารามิเตอร์แยก
         parsed = urlparse(DATABASE_URL)
+
+        # บังคับให้ใช้ IPv4 address
+        ipv4_host = force_ipv4_dns(parsed.hostname)
+
         conn = psycopg2.connect(
-            host=parsed.hostname,
+            host=ipv4_host,  # ใช้ IPv4 address แทน hostname
             port=parsed.port or 5432,
             user=parsed.username,
             password=parsed.password,

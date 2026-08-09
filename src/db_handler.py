@@ -1,6 +1,7 @@
 import os
 import psycopg2
 import time
+import socket
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
@@ -9,6 +10,18 @@ load_dotenv()
 
 # ดึง URL ฐานข้อมูลของ Supabase จาก Environment Variable
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# บังคับให้ใช้ IPv4 เท่านั้น (แก้ปัญหา IPv6 network unreachable)
+def force_ipv4_dns(hostname):
+    """Force DNS resolution to IPv4 only"""
+    try:
+        # ใช้ AF_INET (IPv4 only) แทน AF_UNSPEC (IPv4/IPv6)
+        result = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+        if result:
+            return result[0][4][0]  # Return first IPv4 address
+    except Exception as e:
+        print(f"[DNS] IPv4 resolution failed for {hostname}: {e}")
+    return hostname  # Fallback to original hostname
 
 def get_connection(retries=3, retry_delay=2):
     """ฟังก์ชันจัดการ Connection ไปยัง PostgreSQL (แก้ปัญหา IPv6 + Retry Logic)"""
@@ -21,9 +34,13 @@ def get_connection(retries=3, retry_delay=2):
             # Parse URL
             parsed = urlparse(DATABASE_URL)
 
+            # บังคับให้ใช้ IPv4 address
+            ipv4_host = force_ipv4_dns(parsed.hostname)
+            print(f"[DNS] Resolved {parsed.hostname} to {ipv4_host}")
+
             # สร้าง connection แบบใช้พารามิเตอร์แยกเพื่อควบคุม connection ได้ดีกว่า
             conn = psycopg2.connect(
-                host=parsed.hostname,
+                host=ipv4_host,  # ใช้ IPv4 address แทน hostname
                 port=parsed.port or 5432,
                 user=parsed.username,
                 password=parsed.password,
