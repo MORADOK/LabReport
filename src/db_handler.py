@@ -28,6 +28,10 @@ def get_connection(retries=3, retry_delay=2):
     if not DATABASE_URL:
         raise ValueError("[Error] DATABASE_URL not found in .env file")
 
+    # Debug: ตรวจสอบว่า DATABASE_URL มีรูปแบบถูกต้องหรือไม่
+    if DATABASE_URL.startswith('DATABASE_URL='):
+        raise ValueError(f"[Error] DATABASE_URL format is incorrect. Remove 'DATABASE_URL=' prefix. Current value: {DATABASE_URL[:80]}")
+
     last_error = None
     for attempt in range(retries):
         try:
@@ -36,7 +40,7 @@ def get_connection(retries=3, retry_delay=2):
 
             # Validate parsed URL
             if not parsed.hostname:
-                raise ValueError(f"[Error] Invalid DATABASE_URL - hostname is None. URL: {DATABASE_URL[:50]}...")
+                raise ValueError(f"[Error] Invalid DATABASE_URL - hostname is None. URL format should be 'postgresql://user:pass@host:port/db'. Current: {DATABASE_URL[:80]}")
 
             # ตรวจสอบว่าใช้ pooler หรือไม่ (ต้องใช้ hostname เพื่อ SNI)
             is_pooler = 'pooler' in parsed.hostname
