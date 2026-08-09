@@ -1,6 +1,7 @@
 import streamlit as st
 import sys
 import os
+from src.pdf_generator import create_pdf
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
@@ -63,6 +64,50 @@ else:
             mime="text/csv",
             type="primary" # ทำให้ปุ่มเป็นสีหลัก (สีน้ำเงิน) โดดเด่นขึ้น
         )
+        import json # นำเข้า json ด้านบนของไฟล์
+
+# ... (โค้ดส่วนแสดงผลตารางเดิม) ...
+
+        # 🌟 แทนที่ส่วนปุ่ม PDF ด้วยโค้ดดึงข้อมูลจริงนี้
+        if st.button(f"📄 สร้างรายงาน PDF - {selected_patient}", type="secondary"):
+            latest_record = patient_df.iloc[0] 
+            
+            table_data = {
+                "GLU (กลูโคส)": latest_record['glucose'],
+                "BIL (บิลิรูบิน)": latest_record['bilirubin'],
+                "KET (คีโตน)": latest_record['ketones'],
+                "SG (ความถ่วงจำเพาะ)": latest_record['specific_gravity'],
+                "BLO (เลือด)": latest_record['blood'],
+                "pH (ความเป็นกรด-ด่าง)": latest_record['ph'],
+                "PRO (โปรตีน)": latest_record['protein'],
+                "URO (ยูโรบิลิโนเจน)": latest_record['urobilinogen'],
+                "NIT (ไนไตรต์)": latest_record['nitrite'],
+                "LEU (เม็ดเลือดขาว)": latest_record['leukocytes'],
+                "ASC (วิตามินซี)": latest_record['ascorbic_acid']
+            }
+            
+            # แปลงข้อความกลับจาก JSON String เป็น List เพื่อแสดงเป็น Bullet ใน PDF
+            try:
+                db_bullets = json.loads(latest_record.get('clinical_bullets', '[]'))
+            except:
+                db_bullets = []
+                
+            db_summary = latest_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
+            
+            pdf_bytes = create_pdf(
+                patient_name=selected_patient, 
+                date_str=latest_record['date'], 
+                table_data=table_data, 
+                summary_text=db_summary, 
+                bullet_points=db_bullets
+            )
+            
+            st.download_button(
+                label="⬇️ คลิกเพื่อดาวน์โหลด PDF",
+                data=pdf_bytes,
+                file_name=f"LHome_Urine_Report_{selected_patient}.pdf",
+                mime="application/pdf"
+            )
         
         st.markdown("---")
         

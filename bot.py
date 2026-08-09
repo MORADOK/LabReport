@@ -107,29 +107,28 @@ def process_image_with_ai(image_id, user_id, patient_name):
         os.remove(temp_path)
 
         # 2. บังคับ AI ด้วย System Prompt และ Data Standards
+        # (ส่วนการตั้งค่า CYBOW_11M_STANDARDS ยังคงไว้เหมือนเดิม)
+        
+        # 1. อัปเดต System Prompt
         system_prompt = f"""
-        คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์แผ่นตรวจปัสสาวะ หน้าที่ของคุณคืออ่านค่าจากภาพแผ่น CYBOW 11M 
-        คุณต้องคืนค่าเป็น JSON Format เท่านั้น และที่สำคัญที่สุด:
-        ค่าของแต่ละพารามิเตอร์ "ต้องเลือกจากรายการมาตรฐานด้านล่างนี้ให้ตรงกันทุกตัวอักษรเท่านั้น" (ห้ามสะกดผิด ห้ามแปลภาษา):
+        คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์แผ่นตรวจปัสสาวะ หน้าที่ของคุณคือ:
+        1. อ่านค่าจากภาพแผ่น CYBOW 11M โดยเลือกค่าให้ตรงกับมาตรฐานนี้เท่านั้น:
+           - urobilinogen: {CYBOW_11M_STANDARDS['urobilinogen']}
+           - glucose: {CYBOW_11M_STANDARDS['glucose']}
+           - blood: {CYBOW_11M_STANDARDS['blood']}
+           - protein: {CYBOW_11M_STANDARDS['protein']}
+           (รวมถึงค่าอื่นๆ ให้ครบ 11 พารามิเตอร์)
+           
+        2. เขียน 'clinical_summary' (สรุปผลการตรวจ) เป็นภาษาไทย 1-2 ประโยค 
+        3. เขียน 'clinical_bullets' (ข้อบ่งชี้ทางคลินิกและวิเคราะห์ผล) เป็นภาษาไทยแบบ Array อธิบายเจาะลึกความสัมพันธ์ของพารามิเตอร์ที่ผิดปกติ
 
-        - urobilinogen: เลือกจาก {CYBOW_11M_STANDARDS['urobilinogen']}
-        - glucose: เลือกจาก {CYBOW_11M_STANDARDS['glucose']}
-        - bilirubin: เลือกจาก {CYBOW_11M_STANDARDS['bilirubin']}
-        - ketones: เลือกจาก {CYBOW_11M_STANDARDS['ketones']}
-        - specific_gravity: เลือกจาก {CYBOW_11M_STANDARDS['specific_gravity']}
-        - blood: เลือกจาก {CYBOW_11M_STANDARDS['blood']}
-        - ph: เลือกจาก {CYBOW_11M_STANDARDS['ph']}
-        - protein: เลือกจาก {CYBOW_11M_STANDARDS['protein']}
-        - nitrite: เลือกจาก {CYBOW_11M_STANDARDS['nitrite']}
-        - leukocytes: เลือกจาก {CYBOW_11M_STANDARDS['leukocytes']}
-        - ascorbic_acid: เลือกจาก {CYBOW_11M_STANDARDS['ascorbic_acid']}
-
-        หากอ่านค่าไหนไม่ได้หรือภาพไม่ชัด ให้ตอบว่า "N/A"
-        รูปแบบ JSON ที่ต้องการ:
+        ตอบกลับเป็น JSON Format:
         {{
-            "urobilinogen": "...", "glucose": "...", "bilirubin": "...", "ketones": "...",
-            "specific_gravity": "...", "blood": "...", "ph": "...", "protein": "...",
-            "nitrite": "...", "leukocytes": "...", "ascorbic_acid": "..."
+            "urobilinogen": "...", "glucose": "...", "blood": "...", "protein": "...",
+            "specific_gravity": "...", "ph": "...", "bilirubin": "...", "ketones": "...",
+            "nitrite": "...", "leukocytes": "...", "ascorbic_acid": "...",
+            "clinical_summary": "...",
+            "clinical_bullets": ["ข้อ 1...", "ข้อ 2..."]
         }}
         """
 
@@ -165,11 +164,16 @@ def process_image_with_ai(image_id, user_id, patient_name):
         u_leukocytes = data.get('leukocytes', 'N/A')
         u_ascorbic_acid = data.get('ascorbic_acid', 'N/A')
 
+        # ดึงข้อมูล clinical analysis จาก AI
+        clinical_summary = data.get('clinical_summary', 'ไม่สามารถสรุปผลได้แน่ชัด')
+        clinical_bullets = data.get('clinical_bullets', [])
+
         success = db_handler.insert_record(
             date=date_str, urobilinogen=u_urobilinogen, glucose=u_glucose,
             bilirubin=u_bilirubin, ketones=u_ketones, specific_gravity=u_sg,
             blood=u_blood, ph=u_ph, protein=u_protein, nitrite=u_nitrite,
-            leukocytes=u_leukocytes, ascorbic_acid=u_ascorbic_acid, notes=patient_name
+            leukocytes=u_leukocytes, ascorbic_acid=u_ascorbic_acid, notes=patient_name,
+            clinical_summary=clinical_summary, clinical_bullets=clinical_bullets
         )
 
         # 4. ส่งผลลัพธ์กลับไปยัง LINE
