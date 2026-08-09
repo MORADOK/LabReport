@@ -35,7 +35,7 @@ def get_connection(retries=3, retry_delay=2):
             parsed = urlparse(DATABASE_URL)
 
             # ตรวจสอบว่าใช้ pooler หรือไม่ (ต้องใช้ hostname เพื่อ SNI)
-            is_pooler = 'pooler' in parsed.hostname
+            is_pooler = parsed.hostname and 'pooler' in parsed.hostname
 
             if is_pooler:
                 # Pooler: ต้องใช้ hostname สำหรับ SNI (ไม่ resolve เป็น IP)
