@@ -445,19 +445,30 @@ else:
                 if st.button("📄 สร้างรายงาน PDF", use_container_width=True, type="primary"):
                     with st.spinner("🔄 กำลังสร้าง PDF..."):
                         try:
-                            table_data = {
-                                "GLU (กลูโคส)": latest['glucose'],
-                                "BIL (บิลิรูบิน)": latest['bilirubin'],
-                                "KET (คีโตน)": latest['ketones'],
-                                "SG (ความถ่วงจำเพาะ)": latest['specific_gravity'],
-                                "BLO (เลือด)": latest['blood'],
-                                "pH (ความเป็นกรด-ด่าง)": latest['ph'],
-                                "PRO (โปรตีน)": latest['protein'],
-                                "URO (ยูโรบิลิโนเจน)": latest['urobilinogen'],
-                                "NIT (ไนไตรต์)": latest['nitrite'],
-                                "LEU (เม็ดเลือดขาว)": latest['leukocytes'],
-                                "ASC (วิตามินซี)": latest['ascorbic_acid']
-                            }
+                            # สร้าง Case ID
+                            date_obj = pd.to_datetime(latest['date'])
+                            case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-001"
+
+                            def get_status(val):
+                                val_str = str(val).lower()
+                                if any(x in val_str for x in ['+', 'pos', 'trace', 'abnormal', '15-40', 'small', 'mod']):
+                                    return "Positive/Abnormal"
+                                return "Normal"
+
+                            # เตรียมข้อมูลส่งให้ PDF Generator (4 คอลัมน์)
+                            table_data = [
+                                ["GLU (กลูโคส/น้ำตาล)", latest['glucose'], "-", get_status(latest['glucose'])],
+                                ["KET (คีโตน)", latest['ketones'], "-", get_status(latest['ketones'])],
+                                ["SG (ความถ่วงจำเพาะ)", latest['specific_gravity'], "-", "Normal"],
+                                ["BLO (เลือด)", latest['blood'], "-", get_status(latest['blood'])],
+                                ["pH (ความเป็นกรด-ด่าง)", latest['ph'], "-", "Normal"],
+                                ["PRO (โปรตีน)", latest['protein'], "-", get_status(latest['protein'])],
+                                ["URO (ยูโรบิลิโนเจน)", latest['urobilinogen'], "-", get_status(latest['urobilinogen'])],
+                                ["BIL (บิลิรูบิน)", latest['bilirubin'], "-", get_status(latest['bilirubin'])],
+                                ["NIT (ไนไตรต์)", latest['nitrite'], "-", get_status(latest['nitrite'])],
+                                ["LEU (เม็ดเลือดขาว)", latest['leukocytes'], "-", get_status(latest['leukocytes'])],
+                                ["ASC (วิตามินซี)", latest['ascorbic_acid'], "-", get_status(latest['ascorbic_acid'])]
+                            ]
 
                             try:
                                 db_bullets = json.loads(latest.get('clinical_bullets', '[]'))
@@ -468,6 +479,7 @@ else:
 
                             pdf_bytes = create_pdf(
                                 patient_name=patient_name,
+                                case_id=case_id,
                                 date_str=str(latest['date']),
                                 table_data=table_data,
                                 summary_text=db_summary,
