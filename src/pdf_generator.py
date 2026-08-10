@@ -99,4 +99,4 @@ def create_pdf(patient_name, date_str, table_data, summary_text, bullet_points):
         pdf.ln(2)
 
     # 🌟 คืนค่าเป็น bytearray สำหรับ Streamlit download_button
-    return pdf.output()
+    return bytes(pdf.output())

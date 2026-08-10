@@ -377,42 +377,52 @@ else:
             with col_d2:
                 if st.button("📄 สร้างรายงาน PDF", use_container_width=True, type="primary"):
                     with st.spinner("🔄 กำลังสร้าง PDF..."):
-                        table_data = {
-                            "GLU (กลูโคส)": latest['glucose'],
-                            "BIL (บิลิรูบิน)": latest['bilirubin'],
-                            "KET (คีโตน)": latest['ketones'],
-                            "SG (ความถ่วงจำเพาะ)": latest['specific_gravity'],
-                            "BLO (เลือด)": latest['blood'],
-                            "pH (ความเป็นกรด-ด่าง)": latest['ph'],
-                            "PRO (โปรตีน)": latest['protein'],
-                            "URO (ยูโรบิลิโนเจน)": latest['urobilinogen'],
-                            "NIT (ไนไตรต์)": latest['nitrite'],
-                            "LEU (เม็ดเลือดขาว)": latest['leukocytes'],
-                            "ASC (วิตามินซี)": latest['ascorbic_acid']
-                        }
-
                         try:
-                            db_bullets = json.loads(latest.get('clinical_bullets', '[]'))
-                        except:
-                            db_bullets = []
+                            table_data = {
+                                "GLU (กลูโคส)": latest['glucose'],
+                                "BIL (บิลิรูบิน)": latest['bilirubin'],
+                                "KET (คีโตน)": latest['ketones'],
+                                "SG (ความถ่วงจำเพาะ)": latest['specific_gravity'],
+                                "BLO (เลือด)": latest['blood'],
+                                "pH (ความเป็นกรด-ด่าง)": latest['ph'],
+                                "PRO (โปรตีน)": latest['protein'],
+                                "URO (ยูโรบิลิโนเจน)": latest['urobilinogen'],
+                                "NIT (ไนไตรต์)": latest['nitrite'],
+                                "LEU (เม็ดเลือดขาว)": latest['leukocytes'],
+                                "ASC (วิตามินซี)": latest['ascorbic_acid']
+                            }
 
-                        db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
+                            try:
+                                db_bullets = json.loads(latest.get('clinical_bullets', '[]'))
+                            except:
+                                db_bullets = []
 
-                        pdf_bytes = create_pdf(
-                            patient_name=patient_name,
-                            date_str=str(latest['date']),
-                            table_data=table_data,
-                            summary_text=db_summary,
-                            bullet_points=db_bullets
-                        )
+                            db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
 
-                        st.download_button(
-                            label="⬇️ คลิกดาวน์โหลด PDF",
-                            data=pdf_bytes,
-                            file_name=f"LHome_Report_{patient_name.replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
+                            pdf_bytes = create_pdf(
+                                patient_name=patient_name,
+                                date_str=str(latest['date']),
+                                table_data=table_data,
+                                summary_text=db_summary,
+                                bullet_points=db_bullets
+                            )
+
+                            # ✅ เช็คก่อนว่ามีข้อมูลถูกส่งกลับมาจริงๆ ค่อยเรนเดอร์ปุ่ม
+                            if pdf_bytes:
+                                st.download_button(
+                                    label="⬇️ คลิกดาวน์โหลด PDF",
+                                    data=pdf_bytes,
+                                    file_name=f"LHome_Report_{patient_name.replace(' ', '_')}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                            else:
+                                st.error("⚠️ ไม่พบข้อมูลไฟล์ PDF")
+
+                        except Exception as e:
+                            # 🌟 หากเกิด Error ระหว่างสร้าง PDF ให้แสดงจุดที่พังออกมาบนหน้าจอ
+                            st.error(f"❌ เกิดข้อผิดพลาดในการสร้างไฟล์ PDF: {e}")
+
 
             # Health Trends
             st.markdown("---")
