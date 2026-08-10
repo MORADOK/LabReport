@@ -57,25 +57,25 @@ CYBOW_11M_STANDARDS = {
 # ---------------------------------------------------------
 # 🖼️ Image Optimization (ป้องกัน Error 402 Token ไม่พอ)
 # ---------------------------------------------------------
-def resize_image_to_base64(image_path: str, max_dimension: int = 1024) -> str:
-    """ฟังก์ชันย่อภาพแบบคงสัดส่วน และแปลงเป็น Base64 String"""
+def resize_image_to_base64(image_path: str, max_dimension: int = 1536) -> str:
+    """ฟังก์ชันย่อภาพแบบคงสัดส่วน (ปรับความคมชัดสูงสำหรับงาน Medical Vision)"""
     try:
         with Image.open(image_path) as img:
             width, height = img.size
             if max(width, height) > max_dimension:
                 scaling_factor = max_dimension / float(max(width, height))
                 new_size = (int(width * scaling_factor), int(height * scaling_factor))
-                # ย่อภาพโดยใช้ LANCZOS เพื่อรักษาความคมชัด
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
             
             buffered = io.BytesIO()
-            img.convert('RGB').save(buffered, format="JPEG", quality=85)
+            # 🌟 แก้ไขตรงนี้: เพิ่ม quality จาก 85 เป็น 95 เพื่อรักษาสีให้ชัดเจน
+            img.convert('RGB').save(buffered, format="JPEG", quality=95)
             img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
             return img_str
     except Exception as e:
         logging.error(f"Image resize error: {e}")
         return None
-
+        
 # ---------------------------------------------------------
 # 🚀 Endpoints & LINE Webhook
 # ---------------------------------------------------------
@@ -140,10 +140,14 @@ def process_image_with_ai(image_id, user_id, patient_name):
         if not base64_image:
             raise ValueError("ไม่สามารถประมวลผลไฟล์ภาพได้")
 
-        # 3. สร้าง System Prompt รัดคอ AI ให้ทำงานตามมาตรฐาน
+        # 3. สร้าง System Prompt รัดคอ AI ให้ทำงานตามมาตรฐาน (เวอร์ชันปรับปรุง)
         system_prompt = f"""
-        คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์แผ่นตรวจปัสสาวะ หน้าที่ของคุณคือ:
-        1. อ่านค่าจากภาพแผ่น CYBOW 11M โดยเลือกค่าให้ตรงกับมาตรฐานนี้เท่านั้น (ห้ามสะกดผิด ห้ามแปลภาษา):
+        คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์แผ่นตรวจปัสสาวะ CYBOW 11M
+        แผ่นตรวจในภาพจะเรียงแถบสี 11 พารามิเตอร์ 
+        
+        กฎเหล็ก (CRITICAL RULES):
+        1. คุณ "ต้อง" พยายามประเมินและเลือกค่าที่ใกล้เคียงกับสีในภาพมากที่สุด (Best Match) ห้ามตอบ N/A เด็ดขาด ยกเว้นว่าแถบสีนั้นถูกตัดขาดหายไปจากภาพจริงๆ
+        2. เลือกค่าจากรายการมาตรฐานเหล่านี้ให้ตรงเป๊ะทุกตัวอักษร:
            - urobilinogen: {CYBOW_11M_STANDARDS['urobilinogen']}
            - glucose: {CYBOW_11M_STANDARDS['glucose']}
            - bilirubin: {CYBOW_11M_STANDARDS['bilirubin']}
@@ -156,11 +160,9 @@ def process_image_with_ai(image_id, user_id, patient_name):
            - leukocytes: {CYBOW_11M_STANDARDS['leukocytes']}
            - ascorbic_acid: {CYBOW_11M_STANDARDS['ascorbic_acid']}
            
-        2. ประเมินสถานะทางคลินิก:
-           - เขียน 'clinical_summary' (สรุปผลการตรวจ) เป็นภาษาไทย 1-2 ประโยค เพื่อให้พยาบาลอ่านง่าย
-           - เขียน 'clinical_bullets' (ข้อบ่งชี้ทางคลินิก) เป็นภาษาไทยแบบ Array อธิบายเจาะลึกความสัมพันธ์ของพารามิเตอร์ที่ผิดปกติ
-
-        หากอ่านค่าไหนไม่ได้หรือภาพไม่ชัด ให้ตอบว่า "N/A"
+        3. ประเมินสถานะทางคลินิก:
+           - เขียน 'clinical_summary' เป็นภาษาไทย 1-2 ประโยค
+           - เขียน 'clinical_bullets' เป็นข้อๆ (Array) อธิบายเจาะลึก
         
         ตอบกลับเป็น JSON Format ตามโครงสร้างนี้เท่านั้น:
         {{
@@ -190,6 +192,7 @@ def process_image_with_ai(image_id, user_id, patient_name):
         )
 
         result_text = response.choices[0].message.content
+        print(f"--- AI RESPONSE DEBUG ---\n{result_text}\n-------------------------")
         
         # 5. ทำความสะอาดข้อความ (ดักจับ Markdown) และแปลงเป็น JSON
         cleaned_text = re.sub(r'```json\n|\n```|```', '', result_text).strip()
