@@ -4,15 +4,18 @@ import base64
 import tempfile
 import threading
 import logging
+import re
+import io
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError, LineBotApiError
+from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, ImageMessage, TextSendMessage
 from dotenv import load_dotenv
 from openai import OpenAI
+from PIL import Image
 
-# นำเข้าโมดูลฐานข้อมูล (ที่เชื่อมกับ Supabase แล้ว)
+# นำเข้าโมดูลฐานข้อมูล (ที่เชื่อมกับ Supabase และมี RLS)
 from src import db_handler
 
 # โหลด Environment Variables
@@ -24,9 +27,14 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 app = FastAPI()
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
 
-# เก็บสถานะการทำงานชั่วคราว
+# ใช้ OpenAI SDK เชื่อมต่อ OpenRouter
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY
+)
+
+# เก็บสถานะการทำงานชั่วคราวของผู้ใช้
 user_states = {}
 
 # ---------------------------------------------------------
@@ -47,7 +55,29 @@ CYBOW_11M_STANDARDS = {
 }
 
 # ---------------------------------------------------------
-# Endpoints
+# 🖼️ Image Optimization (ป้องกัน Error 402 Token ไม่พอ)
+# ---------------------------------------------------------
+def resize_image_to_base64(image_path: str, max_dimension: int = 1024) -> str:
+    """ฟังก์ชันย่อภาพแบบคงสัดส่วน และแปลงเป็น Base64 String"""
+    try:
+        with Image.open(image_path) as img:
+            width, height = img.size
+            if max(width, height) > max_dimension:
+                scaling_factor = max_dimension / float(max(width, height))
+                new_size = (int(width * scaling_factor), int(height * scaling_factor))
+                # ย่อภาพโดยใช้ LANCZOS เพื่อรักษาความคมชัด
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+            
+            buffered = io.BytesIO()
+            img.convert('RGB').save(buffered, format="JPEG", quality=85)
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            return img_str
+    except Exception as e:
+        logging.error(f"Image resize error: {e}")
+        return None
+
+# ---------------------------------------------------------
+# 🚀 Endpoints & LINE Webhook
 # ---------------------------------------------------------
 @app.get("/")
 def keep_alive():
@@ -84,16 +114,19 @@ def handle_text(event):
         
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=f"กำลังวิเคราะห์ผลตรวจของ {patient_name}...\nกรุณารอสักครู่ครับ ⏳")
+            TextSendMessage(text=f"กำลังวิเคราะห์ผลตรวจของ {patient_name}...\nขั้นตอนนี้อาจใช้เวลาประมาณ 10-20 วินาที กรุณารอสักครู่ครับ ⏳")
         )
         
-        # ลบ state เพื่อป้องกันการทำงานซ้ำซ้อน
         del user_states[user_id]
         
-        # ประมวลผลใน Background
+        # ส่งงานให้ Background Thread เพื่อไม่ให้ LINE Timeout
         threading.Thread(target=process_image_with_ai, args=(image_id, user_id, patient_name)).start()
 
+# ---------------------------------------------------------
+# 🧠 AI Processing Logic
+# ---------------------------------------------------------
 def process_image_with_ai(image_id, user_id, patient_name):
+    temp_path = None
     try:
         # 1. โหลดรูปจาก LINE
         message_content = line_bot_api.get_message_content(image_id)
@@ -102,57 +135,46 @@ def process_image_with_ai(image_id, user_id, patient_name):
                 tf.write(chunk)
             temp_path = tf.name
 
-        with open(temp_path, "rb") as image_file:
-            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-        os.remove(temp_path)
+        # 2. ย่อภาพและแปลงเป็น Base64 (ป้องกัน Token เกินกำหนด)
+        base64_image = resize_image_to_base64(temp_path, max_dimension=1024)
+        if not base64_image:
+            raise ValueError("ไม่สามารถประมวลผลไฟล์ภาพได้")
 
-        # 2. บังคับ AI ด้วย System Prompt และ Data Standards
-        # (ส่วนการตั้งค่า CYBOW_11M_STANDARDS ยังคงไว้เหมือนเดิม)
-        
-        # 1. อัปเดต System Prompt
+        # 3. สร้าง System Prompt รัดคอ AI ให้ทำงานตามมาตรฐาน
         system_prompt = f"""
         คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์แผ่นตรวจปัสสาวะ หน้าที่ของคุณคือ:
-
-        1. อ่านค่าจากภาพแผ่น CYBOW 11M โดยเลือกค่าให้ตรงกับมาตรฐานนี้เท่านั้น:
+        1. อ่านค่าจากภาพแผ่น CYBOW 11M โดยเลือกค่าให้ตรงกับมาตรฐานนี้เท่านั้น (ห้ามสะกดผิด ห้ามแปลภาษา):
            - urobilinogen: {CYBOW_11M_STANDARDS['urobilinogen']}
            - glucose: {CYBOW_11M_STANDARDS['glucose']}
            - bilirubin: {CYBOW_11M_STANDARDS['bilirubin']}
            - ketones: {CYBOW_11M_STANDARDS['ketones']}
-           - specific_gravity: {CYBOW_11M_STANDARDS['specific_gravity']} (ต้องเป็นตัวเลขเท่านั้น เช่น "1.020")
+           - specific_gravity: {CYBOW_11M_STANDARDS['specific_gravity']}
            - blood: {CYBOW_11M_STANDARDS['blood']}
-           - ph: {CYBOW_11M_STANDARDS['ph']} (ต้องเป็นตัวเลขเท่านั้น เช่น "7")
+           - ph: {CYBOW_11M_STANDARDS['ph']}
            - protein: {CYBOW_11M_STANDARDS['protein']}
            - nitrite: {CYBOW_11M_STANDARDS['nitrite']}
            - leukocytes: {CYBOW_11M_STANDARDS['leukocytes']}
            - ascorbic_acid: {CYBOW_11M_STANDARDS['ascorbic_acid']}
+           
+        2. ประเมินสถานะทางคลินิก:
+           - เขียน 'clinical_summary' (สรุปผลการตรวจ) เป็นภาษาไทย 1-2 ประโยค เพื่อให้พยาบาลอ่านง่าย
+           - เขียน 'clinical_bullets' (ข้อบ่งชี้ทางคลินิก) เป็นภาษาไทยแบบ Array อธิบายเจาะลึกความสัมพันธ์ของพารามิเตอร์ที่ผิดปกติ
 
-        2. เขียน 'clinical_summary' (สรุปผลการตรวจ) เป็นภาษาไทย 1-2 ประโยค
-        3. เขียน 'clinical_bullets' (ข้อบ่งชี้ทางคลินิกและวิเคราะห์ผล) เป็นภาษาไทยแบบ Array
-
-        ⚠️ สำคัญ:
-        - specific_gravity และ ph ต้องเป็นตัวเลขเท่านั้น (ไม่ใช่คำว่า "normal" หรือ "abnormal")
-        - ใช้ค่าจากมาตรฐานข้างบนเท่านั้น ห้ามสร้างค่าใหม่
-
-        ตอบกลับเป็น JSON Format:
+        หากอ่านค่าไหนไม่ได้หรือภาพไม่ชัด ให้ตอบว่า "N/A"
+        
+        ตอบกลับเป็น JSON Format ตามโครงสร้างนี้เท่านั้น:
         {{
-            "urobilinogen": "0.1 Normal",
-            "glucose": "neg.",
-            "bilirubin": "neg.",
-            "ketones": "neg.",
-            "specific_gravity": "1.020",
-            "blood": "neg.",
-            "ph": "7",
-            "protein": "neg.",
-            "nitrite": "neg.",
-            "leukocytes": "neg.",
-            "ascorbic_acid": "neg.",
-            "clinical_summary": "ผลตรวจปัสสาวะอยู่ในเกณฑ์ปกติทุกพารามิเตอร์",
-            "clinical_bullets": ["ไม่พบความผิดปกติ"]
+            "urobilinogen": "...", "glucose": "...", "blood": "...", "protein": "...",
+            "specific_gravity": "...", "ph": "...", "bilirubin": "...", "ketones": "...",
+            "nitrite": "...", "leukocytes": "...", "ascorbic_acid": "...",
+            "clinical_summary": "...",
+            "clinical_bullets": ["ข้อ 1...", "ข้อ 2..."]
         }}
         """
 
+        # 4. เรียก OpenRouter API
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="openai/gpt-4o-mini", # หรือปรับเป็นโมเดล Vision ที่ต้องการ
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
@@ -163,14 +185,17 @@ def process_image_with_ai(image_id, user_id, patient_name):
                     ]
                 }
             ],
-            max_tokens=2048,  # ลด max_tokens เพื่อประหยัด credits
+            max_tokens=1000, # จำกัด Token ลดความเสี่ยง Error 402
             response_format={"type": "json_object"}
         )
 
         result_text = response.choices[0].message.content
-        data = json.loads(result_text)
+        
+        # 5. ทำความสะอาดข้อความ (ดักจับ Markdown) และแปลงเป็น JSON
+        cleaned_text = re.sub(r'```json\n|\n```|```', '', result_text).strip()
+        data = json.loads(cleaned_text)
 
-        # 3. จัดเตรียมข้อมูลและบันทึกลง Database
+        # 6. เตรียมข้อมูลบันทึกลง Database
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # ฟังก์ชันแปลงค่าเป็น float อย่างปลอดภัย
@@ -179,67 +204,49 @@ def process_image_with_ai(image_id, user_id, patient_name):
             if value is None or value == 'N/A':
                 return default
             try:
-                # ลองแปลงเป็น float
                 return float(value)
             except (ValueError, TypeError):
-                # ถ้าแปลงไม่ได้ (เช่น "normal", "abnormal") ให้ใช้ค่า default
                 logging.warning(f"Cannot convert '{value}' to float, using default {default}")
                 return default
 
-        u_urobilinogen = data.get('urobilinogen', 'N/A')
-        u_glucose = data.get('glucose', 'N/A')
-        u_bilirubin = data.get('bilirubin', 'N/A')
-        u_ketones = data.get('ketones', 'N/A')
-        u_sg = safe_float(data.get('specific_gravity'), 1.020)  # ค่าปกติคือ 1.020
-        u_blood = data.get('blood', 'N/A')
-        u_ph = safe_float(data.get('ph'), 7.0)  # ค่าปกติคือ 7.0
-        u_protein = data.get('protein', 'N/A')
-        u_nitrite = data.get('nitrite', 'N/A')
-        u_leukocytes = data.get('leukocytes', 'N/A')
-        u_ascorbic_acid = data.get('ascorbic_acid', 'N/A')
-
-        # ดึงข้อมูล clinical analysis จาก AI
-        clinical_summary = data.get('clinical_summary', 'ไม่สามารถสรุปผลได้แน่ชัด')
-        clinical_bullets = data.get('clinical_bullets', [])
-
         success = db_handler.insert_record(
-            date=date_str, urobilinogen=u_urobilinogen, glucose=u_glucose,
-            bilirubin=u_bilirubin, ketones=u_ketones, specific_gravity=u_sg,
-            blood=u_blood, ph=u_ph, protein=u_protein, nitrite=u_nitrite,
-            leukocytes=u_leukocytes, ascorbic_acid=u_ascorbic_acid, notes=patient_name,
-            clinical_summary=clinical_summary, clinical_bullets=clinical_bullets
+            date=date_str,
+            urobilinogen=data.get('urobilinogen', 'N/A'),
+            glucose=data.get('glucose', 'N/A'),
+            bilirubin=data.get('bilirubin', 'N/A'),
+            ketones=data.get('ketones', 'N/A'),
+            specific_gravity=safe_float(data.get('specific_gravity'), 1.020),
+            blood=data.get('blood', 'N/A'),
+            ph=safe_float(data.get('ph'), 7.0),
+            protein=data.get('protein', 'N/A'),
+            nitrite=data.get('nitrite', 'N/A'),
+            leukocytes=data.get('leukocytes', 'N/A'),
+            ascorbic_acid=data.get('ascorbic_acid', 'N/A'),
+            notes=patient_name,
+            clinical_summary=data.get('clinical_summary', 'ไม่สามารถสรุปผลได้แน่ชัด'),
+            clinical_bullets=data.get('clinical_bullets', [])
         )
 
-        # 4. ส่งผลลัพธ์กลับไปยัง LINE
+        # 7. ส่งผลลัพธ์กลับไปยัง LINE
         if success:
             reply_msg = (
                 f"✅ บันทึกผลตรวจสำเร็จ!\n👤 คนไข้: {patient_name}\n\n"
-                f"🔬 ผลตรวจ CYBOW 11M:\n"
-                f"1. Urobilinogen: {u_urobilinogen}\n2. Glucose: {u_glucose}\n"
-                f"3. Bilirubin: {u_bilirubin}\n4. Ketones: {u_ketones}\n"
-                f"5. S.G.: {data.get('specific_gravity', 'N/A')}\n6. Blood: {u_blood}\n"
-                f"7. pH: {data.get('ph', 'N/A')}\n8. Protein: {u_protein}\n"
-                f"9. Nitrite: {u_nitrite}\n10. Leukocytes: {u_leukocytes}\n"
-                f"11. Ascorbic Acid: {u_ascorbic_acid}\n\n"
-                f"📊 ข้อมูลซิงค์เข้า LHome Dashboard แล้วครับ!"
+                f"📝 สรุปผล:\n{data.get('clinical_summary', '')}\n\n"
+                f"สามารถกดดูรายงาน PDF ฉบับเต็มได้ที่ระบบ LHome Dashboard ครับ!"
             )
             line_bot_api.push_message(user_id, TextSendMessage(text=reply_msg))
+        else:
+            raise ValueError("บันทึกข้อมูลลง Database ล้มเหลว")
 
     except Exception as e:
-        logging.error(f"Error processing image: {e}")
-
-        # กำหนดข้อความ error ที่เหมาะสมตามประเภทของ error
-        error_message = "❌ ขออภัยครับ เกิดข้อผิดพลาดในการวิเคราะห์ภาพ กรุณาลองใหม่อีกครั้ง"
-
-        # ตรวจสอบว่าเป็น OpenRouter API error หรือไม่
-        if "402" in str(e) or "credits" in str(e).lower():
-            error_message = "❌ ระบบ AI ไม่สามารถประมวลผลได้ในขณะนี้ (ปัญหา credits)\nกรุณาติดต่อผู้ดูแลระบบครับ"
-        elif "401" in str(e) or "unauthorized" in str(e).lower():
-            error_message = "❌ ระบบ AI มีปัญหาการยืนยันตัวตน กรุณาติดต่อผู้ดูแลระบบครับ"
-        elif "timeout" in str(e).lower():
-            error_message = "❌ ระบบใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้งครับ"
-
+        error_msg = str(e)
+        logging.error(f"Error processing image: {error_msg}")
+        
         line_bot_api.push_message(
             user_id,
-            TextSendMessage(text=error_message)
+            TextSendMessage(text=f"❌ ขออภัยครับ ระบบวิเคราะห์ขัดข้อง\nสาเหตุ: {error_msg}\nกรุณาลองส่งรูปใหม่อีกครั้งครับ")
         )
+    finally:
+        # เคลียร์ไฟล์ขยะออกจากระบบ
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
