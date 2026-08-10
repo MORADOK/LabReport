@@ -5,6 +5,7 @@ import socket
 import plotly.express as px
 from urllib.parse import urlparse
 from dotenv import load_dotenv
+from src.database import get_connection
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -21,49 +22,27 @@ def force_ipv4_dns(hostname):
     return hostname
 
 def load_data():
-    """โหลดข้อมูลจาก PostgreSQL (Supabase) เป็น Pandas DataFrame"""
-    if not DATABASE_URL or DATABASE_URL.strip() == "":
-        print("[Error] DATABASE_URL not found for loading dashboard data")
-        return pd.DataFrame()
-
-    if DATABASE_URL.startswith('DATABASE_URL='):
-        print("[Error] Invalid DATABASE_URL format")
-        return pd.DataFrame()
-
     conn = None
     try:
-        # ลองใช้ connection string โดยตรงก่อน (ทำงานได้ดีกับ Supabase)
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=15)
-
-        # ดึงข้อมูลจากฐานข้อมูลมาใส่ใน DataFrame ทันที
-        df = pd.read_sql("SELECT * FROM records ORDER BY date DESC", conn)
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # 🌟 ใช้ท่า Execute สดๆ แทน เพื่อลด Dependency ของ SQLAlchemy
+        cursor.execute("SELECT * FROM records ORDER BY date DESC")
+        
+        # ดึงชื่อคอลัมน์จาก Database
+        columns = [desc[0] for desc in cursor.description]
+        
+        # ดึงข้อมูลทั้งหมดและสร้างเป็น DataFrame
+        df = pd.DataFrame(cursor.fetchall(), columns=columns)
         return df
+        
     except Exception as e:
-        print(f"[Error] Failed to load data: {e}")
-        # Fallback: ลองใช้พารามิเตอร์แยก
-        try:
-            parsed = urlparse(DATABASE_URL)
-            if not parsed.hostname:
-                return pd.DataFrame()
-
-            is_pooler = 'pooler' in parsed.hostname
-
-            conn = psycopg2.connect(
-                host=parsed.hostname,
-                port=parsed.port or 5432,
-                user=parsed.username,
-                password=parsed.password,
-                database=parsed.path.lstrip('/').split('?')[0],
-                connect_timeout=15,
-                sslmode='require' if is_pooler else 'prefer'
-            )
-            df = pd.read_sql("SELECT * FROM records ORDER BY date DESC", conn)
-            return df
-        except Exception as fallback_error:
-            print(f"[Error] Fallback also failed: {fallback_error}")
-            return pd.DataFrame()
+        print(f"Error loading data: {e}")
+        return pd.DataFrame()
     finally:
         if conn:
+            cursor.close()
             conn.close()
 
 def create_trend_chart(df, patient_name, param_col, title_name):

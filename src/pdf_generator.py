@@ -68,7 +68,7 @@ def create_pdf(patient_name, date_str, table_data, summary_text, bullet_points):
     # 2. สรุปผล
     pdf.set_fill_color(240, 248, 255)
     pdf.set_font("THSarabun", "B", 16)
-    pdf.cell(0, 8, " ✓ สรุปผลการตรวจ (Conclusion)", new_x="LMARGIN", new_y="NEXT", fill=True)
+    pdf.cell(0, 8, "- สรุปผลการตรวจ (Conclusion)", new_x="LMARGIN", new_y="NEXT", fill=True)
     pdf.set_font("THSarabun", "", 16)
     pdf.multi_cell(0, 8, str(summary_text))
     pdf.ln(5)
