@@ -5,7 +5,7 @@ import socket
 import plotly.express as px
 from urllib.parse import urlparse
 from dotenv import load_dotenv
-from src.database import get_connection
+from src.db_handler import get_connection
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
