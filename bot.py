@@ -181,7 +181,7 @@ def process_image_with_ai(image_id, user_id, patient_name):
         # 🌟 4. เรียก OpenRouter API (ใช้โมเดลที่รองรับ Vision)
         response = client.chat.completions.create(
             # ใช้ gpt-4o-mini เพื่อความรวดเร็วและประหยัด หรือเปลี่ยนเป็น openai/gpt-4o สำหรับความแม่นยำสูงสุด
-            model="openai/gpt-4o-mini", 
+            model="openai/gpt-4o", 
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
