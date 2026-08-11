@@ -349,25 +349,62 @@ else:
                         date_obj = pd.to_datetime(target_record['date'])
                         case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
 
-                        def get_status(val):
-                            val_str = str(val).lower()
-                            if any(x in val_str for x in ['+', 'pos', 'trace', 'abnormal', '15-40', 'small', 'mod']):
+                        def get_status(param_name, val):
+                            val_str = str(val).lower().strip()
+
+                            # หากเป็นค่าว่างหรือ AI อ่านไม่ได้
+                            if val_str in ["n/a", "-", "", "none"]:
+                                return "N/A"
+
+                            # กลุ่มที่ 1: ต้องเป็น Negative ถึงจะปกติ (Glucose, Ketones, Blood, Protein, Bilirubin, Nitrite, Leukocytes, Ascorbic Acid)
+                            strict_neg_params = ["GLU", "KET", "BLO", "PRO", "BIL", "NIT", "LEU", "ASC"]
+
+                            if any(x in param_name for x in strict_neg_params):
+                                if val_str in ["neg.", "negative", "0", "neg"]:
+                                    return "Normal"
                                 return "Positive/Abnormal"
+
+                            # กลุ่มที่ 2: Urobilinogen (ค่าปกติของ CYBOW 11M คือ 0.1 หรือ 1(16))
+                            elif "URO" in param_name:
+                                if "0.1" in val_str or "normal" in val_str or "1(16)" in val_str:
+                                    return "Normal"
+                                return "Positive/Abnormal"
+
+                            # กลุ่มที่ 3: pH (ค่าปกติทางคลินิก 5.0 - 8.0)
+                            elif "pH" in param_name:
+                                try:
+                                    import re
+                                    # สกัดเฉพาะตัวเลขออกมาจากข้อความ
+                                    num = float(re.findall(r'\d+\.?\d*', val_str)[0])
+                                    return "Normal" if 5.0 <= num <= 8.0 else "Abnormal"
+                                except:
+                                    return "Normal"
+
+                            # กลุ่มที่ 4: Specific Gravity (ค่าปกติทางคลินิก 1.005 - 1.030)
+                            elif "SG" in param_name:
+                                try:
+                                    import re
+                                    num = float(re.findall(r'\d+\.?\d*', val_str)[0])
+                                    # CYBOW 11M อ่านค่าได้ในช่วง 1.000 - 1.030
+                                    return "Normal" if 1.000 <= num <= 1.030 else "Abnormal"
+                                except:
+                                    return "Normal"
+
                             return "Normal"
 
                         # เตรียมข้อมูลส่งให้ PDF Generator
                         table_data = [
-                            ["GLU (กลูโคส/น้ำตาล)", target_record['glucose'], "Negative", get_status(target_record['glucose'])],
-                            ["KET (คีโตน)", target_record['ketones'], "Negative", get_status(target_record['ketones'])],
-                            ["SG (ความถ่วงจำเพาะ)", target_record['specific_gravity'], "1.005-1.030", "Normal"],
-                            ["BLO (เลือด)", target_record['blood'], "Negative", get_status(target_record['blood'])],
-                            ["pH (ความเป็นกรด-ด่าง)", target_record['ph'], "5.0-8.0", "Normal"],
-                            ["PRO (โปรตีน)", target_record['protein'], "Negative", get_status(target_record['protein'])],
-                            ["URO (ยูโรบิลิโนเจน)", target_record['urobilinogen'], "0.1-1.0 mg/dL", get_status(target_record['urobilinogen'])],
-                            ["BIL (บิลิรูบิน)", target_record['bilirubin'], "Negative", get_status(target_record['bilirubin'])],
-                            ["NIT (ไนไตรต์)", target_record['nitrite'], "Negative", get_status(target_record['nitrite'])],
-                            ["LEU (เม็ดเลือดขาว)", target_record['leukocytes'], "Negative", get_status(target_record['leukocytes'])],
-                            ["ASC (วิตามินซี)", target_record['ascorbic_acid'], "Negative", get_status(target_record['ascorbic_acid'])]
+                            ["GLU (กลูโคส/น้ำตาล)", target_record['glucose'], "Negative", get_status("GLU", target_record['glucose'])],
+                            ["KET (คีโตน)", target_record['ketones'], "Negative", get_status("KET", target_record['ketones'])],
+                            ["SG (ความถ่วงจำเพาะ)", target_record['specific_gravity'], "1.005-1.030", get_status("SG", target_record['specific_gravity'])],
+                            ["BLO (เลือด)", target_record['blood'], "Negative", get_status("BLO", target_record['blood'])],
+                            ["pH (ความเป็นกรด-ด่าง)", target_record['ph'], "5.0-8.0", get_status("pH", target_record['ph'])],
+                            ["PRO (โปรตีน)", target_record['protein'], "Negative", get_status("PRO", target_record['protein'])],
+                            ["URO (ยูโรบิลิโนเจน)", target_record['urobilinogen'], "0.1-1.0 mg/dL", get_status("URO", target_record['urobilinogen'])],
+                            ["BIL (บิลิรูบิน)", target_record['bilirubin'], "Negative", get_status("BIL", target_record['bilirubin'])],
+                            ["NIT (ไนไตรต์)", target_record['nitrite'], "Negative", get_status("NIT", target_record['nitrite'])],
+                            ["LEU (เม็ดเลือดขาว)", target_record['leukocytes'], "Negative", get_status("LEU", target_record['leukocytes'])],
+                            ["ASC (วิตามินซี)", target_record['ascorbic_acid'], "Negative", get_status("ASC", target_record['ascorbic_acid'])]
                         ]
 
                         db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
