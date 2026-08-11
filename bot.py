@@ -135,18 +135,17 @@ def process_image_with_ai(image_id, user_id, patient_name):
                 tf.write(chunk)
             temp_path = tf.name
 
-        # 2. ย่อภาพและแปลงเป็น Base64 (ป้องกัน Token เกินกำหนด)
-        base64_image = resize_image_to_base64(temp_path, max_dimension=1024)
+        # 2. ย่อภาพและแปลงเป็น Base64 (ใช้ความละเอียด 1536 เพื่อให้ AI เห็นสีชัดที่สุด)
+        base64_image = resize_image_to_base64(temp_path, max_dimension=1536)
         if not base64_image:
             raise ValueError("ไม่สามารถประมวลผลไฟล์ภาพได้")
 
-        # 3. สร้าง System Prompt รัดคอ AI ให้ทำงานตามมาตรฐาน (เวอร์ชันปรับปรุง)
+        # 🌟 3. อัปเกรด System Prompt (ปรับให้วิเคราะห์เชิงลึกแบบ Medical Grade)
         system_prompt = f"""
-        คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์แผ่นตรวจปัสสาวะ CYBOW 11M
-        แผ่นตรวจในภาพจะเรียงแถบสี 11 พารามิเตอร์ 
+        คุณคือผู้เชี่ยวชาญด้านเทคนิคการแพทย์และการวิเคราะห์แผ่นตรวจปัสสาวะ CYBOW 11M
         
         กฎเหล็ก (CRITICAL RULES):
-        1. คุณ "ต้อง" พยายามประเมินและเลือกค่าที่ใกล้เคียงกับสีในภาพมากที่สุด (Best Match) ห้ามตอบ N/A เด็ดขาด ยกเว้นว่าแถบสีนั้นถูกตัดขาดหายไปจากภาพจริงๆ
+        1. คุณ "ต้อง" พยายามประเมินและเลือกค่าที่ใกล้เคียงกับสีในภาพมากที่สุด ห้ามตอบ N/A เด็ดขาด
         2. เลือกค่าจากรายการมาตรฐานเหล่านี้ให้ตรงเป๊ะทุกตัวอักษร:
            - urobilinogen: {CYBOW_11M_STANDARDS['urobilinogen']}
            - glucose: {CYBOW_11M_STANDARDS['glucose']}
@@ -160,9 +159,14 @@ def process_image_with_ai(image_id, user_id, patient_name):
            - leukocytes: {CYBOW_11M_STANDARDS['leukocytes']}
            - ascorbic_acid: {CYBOW_11M_STANDARDS['ascorbic_acid']}
            
-        3. ประเมินสถานะทางคลินิก:
-           - เขียน 'clinical_summary' เป็นภาษาไทย 1-2 ประโยค
-           - เขียน 'clinical_bullets' เป็นข้อๆ (Array) อธิบายเจาะลึก
+        3. การวิเคราะห์ทางคลินิก (สำคัญมาก):
+           - 'clinical_summary': สรุปผล 1-2 ประโยคให้ชัดเจน เช่น "พบความผิดปกติที่ชัดเจน: ตรวจพบ..."
+           - 'clinical_bullets': ให้เขียนเป็น Array ของข้อความ อธิบายเชื่อมโยงพารามิเตอร์ที่พบเข้าด้วยกัน 
+             **ต้องใช้รูปแบบ "หัวข้อ: รายละเอียด" เสมอ**
+             ตัวอย่างเช่น:
+             "สัญญาณการติดเชื้อ (UTI): พบเม็ดเลือดขาว (LEU) ในระดับสูง และไนไตรต์ (NIT) เป็นบวก บ่งชี้ถึงการติดเชื้อ..."
+             "ภาวะขาดน้ำ: พบความถ่วงจำเพาะ (SG) สูงร่วมกับโปรตีนรั่วไหลเล็กน้อย แนะนำให้ดื่มน้ำให้เพียงพอ..."
+             "คำแนะนำเร่งด่วน: แนะนำให้พบแพทย์เพื่อประเมินอาการเพิ่มเติม..."
         
         ตอบกลับเป็น JSON Format ตามโครงสร้างนี้เท่านั้น:
         {{
@@ -170,13 +174,14 @@ def process_image_with_ai(image_id, user_id, patient_name):
             "specific_gravity": "...", "ph": "...", "bilirubin": "...", "ketones": "...",
             "nitrite": "...", "leukocytes": "...", "ascorbic_acid": "...",
             "clinical_summary": "...",
-            "clinical_bullets": ["ข้อ 1...", "ข้อ 2..."]
+            "clinical_bullets": ["ข้อความที่ 1...", "ข้อความที่ 2..."]
         }}
         """
 
-        # 4. เรียก OpenRouter API
+        # 🌟 4. เรียก OpenRouter API (เปลี่ยนโมเดล และเพิ่ม max_tokens)
         response = client.chat.completions.create(
-            model="openai/gpt-4o-mini", # หรือปรับเป็นโมเดล Vision ที่ต้องการ
+            # แนะนำให้เปลี่ยนเป็น openai/gpt-4o หรือ anthropic/claude-3.5-sonnet เพื่อความแม่นยำสูงสุด
+            model="anthropic/claude-3.5-sonnet", 
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
@@ -187,50 +192,38 @@ def process_image_with_ai(image_id, user_id, patient_name):
                     ]
                 }
             ],
-            max_tokens=1000, # จำกัด Token ลดความเสี่ยง Error 402
+            max_tokens=1500, # ขยาย Token เพื่อรองรับการพิมพ์คำอธิบายทางคลินิกแบบละเอียด
             response_format={"type": "json_object"}
         )
 
         result_text = response.choices[0].message.content
         print(f"--- AI RESPONSE DEBUG ---\n{result_text}\n-------------------------")
         
-        # 5. ทำความสะอาดข้อความ (ดักจับ Markdown) และแปลงเป็น JSON
+        # 5. ทำความสะอาดข้อความและแปลงเป็น JSON
         cleaned_text = re.sub(r'```json\n|\n```|```', '', result_text).strip()
         data = json.loads(cleaned_text)
 
-        # 6. เตรียมข้อมูลบันทึกลง Database
+        # 6. บันทึกลง Database
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # ฟังก์ชันแปลงค่าเป็น float อย่างปลอดภัย
-        def safe_float(value, default=0.0):
-            """แปลงค่าเป็น float โดยจัดการกับค่าที่ไม่ใช่ตัวเลข"""
-            if value is None or value == 'N/A':
-                return default
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                logging.warning(f"Cannot convert '{value}' to float, using default {default}")
-                return default
-
         success = db_handler.insert_record(
-            date=date_str,
-            urobilinogen=data.get('urobilinogen', 'N/A'),
-            glucose=data.get('glucose', 'N/A'),
-            bilirubin=data.get('bilirubin', 'N/A'),
-            ketones=data.get('ketones', 'N/A'),
-            specific_gravity=safe_float(data.get('specific_gravity'), 1.020),
-            blood=data.get('blood', 'N/A'),
-            ph=safe_float(data.get('ph'), 7.0),
-            protein=data.get('protein', 'N/A'),
-            nitrite=data.get('nitrite', 'N/A'),
-            leukocytes=data.get('leukocytes', 'N/A'),
-            ascorbic_acid=data.get('ascorbic_acid', 'N/A'),
+            date=date_str, 
+            urobilinogen=data.get('urobilinogen', 'N/A'), 
+            glucose=data.get('glucose', 'N/A'), 
+            bilirubin=data.get('bilirubin', 'N/A'), 
+            ketones=data.get('ketones', 'N/A'), 
+            specific_gravity=float(data.get('specific_gravity', 0.0)) if data.get('specific_gravity') != 'N/A' else 0.0, 
+            blood=data.get('blood', 'N/A'), 
+            ph=float(data.get('ph', 0.0)) if data.get('ph') != 'N/A' else 0.0, 
+            protein=data.get('protein', 'N/A'), 
+            nitrite=data.get('nitrite', 'N/A'), 
+            leukocytes=data.get('leukocytes', 'N/A'), 
+            ascorbic_acid=data.get('ascorbic_acid', 'N/A'), 
             notes=patient_name,
             clinical_summary=data.get('clinical_summary', 'ไม่สามารถสรุปผลได้แน่ชัด'),
-            clinical_bullets=data.get('clinical_bullets', [])
+            clinical_bullets=json.dumps(data.get('clinical_bullets', [])) # แปลงเป็น string ก่อนเก็บลง DB
         )
 
-        # 7. ส่งผลลัพธ์กลับไปยัง LINE
         if success:
             reply_msg = (
                 f"✅ บันทึกผลตรวจสำเร็จ!\n👤 คนไข้: {patient_name}\n\n"
@@ -250,6 +243,5 @@ def process_image_with_ai(image_id, user_id, patient_name):
             TextSendMessage(text=f"❌ ขออภัยครับ ระบบวิเคราะห์ขัดข้อง\nสาเหตุ: {error_msg}\nกรุณาลองส่งรูปใหม่อีกครั้งครับ")
         )
     finally:
-        # เคลียร์ไฟล์ขยะออกจากระบบ
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)

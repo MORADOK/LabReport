@@ -12,6 +12,128 @@ sys.path.append(BASE_DIR)
 from src.analysis import load_data, create_trend_chart
 
 # ========================================
+# 🔬 Helper Functions
+# ========================================
+def get_cybow_mapping(param_code, raw_val):
+    """
+    ฟังก์ชันแปลงค่าดิบจาก AI ให้เป็นข้อมูล 4 คอลัมน์แบบ Medical Grade
+    อ้างอิงมาตรฐาน CYBOW 11M Color Chart
+    """
+    val = str(raw_val).lower().strip()
+
+    # โครงสร้างเริ่มต้น (กรณีหาค่าไม่เจอ)
+    res = {
+        "result": str(raw_val),
+        "ref": "Negative",
+        "color": "-",
+        "status": "Normal"
+    }
+
+    if val in ["n/a", "-", "", "none"]:
+        return {"result": "N/A", "ref": "-", "color": "-", "status": "N/A"}
+
+    # 1. URO (ยูโรบิลิโนเจน)
+    if param_code == "URO":
+        res["ref"] = "0.1 - 1.0"
+        if "0.1" in val or "normal" in val:
+            res.update({"result": "0.1 - 1.0", "color": "ครีม/พีชอ่อน", "status": "Normal"})
+        elif "1(16)" in val:
+            res.update({"result": "1.0 (16 µmol/L)", "color": "พีช", "status": "Normal"})
+        else: # 2(33), 4(66), 8(131)
+            res.update({"result": f"> 2.0 (High)", "color": "ชมพู/แดง", "status": "Positive (High)"})
+
+    # 2. GLU (กลูโคส)
+    elif param_code == "GLU":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "ฟ้า (Teal)", "status": "Normal"})
+        else:
+            res.update({"result": val.replace("±", "+-").upper(), "color": "เขียว/น้ำตาล", "status": "Positive"})
+
+    # 3. BIL (บิลิรูบิน)
+    elif param_code == "BIL":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
+        else:
+            res.update({"result": val.upper(), "color": "ชมพู/แดง", "status": "Positive"})
+
+    # 4. KET (คีโตน)
+    elif param_code == "KET":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
+        elif "±" in val or "15" in val:
+            res.update({"result": "15 - 40 mg/dL", "color": "ชมพู/ม่วงอ่อน", "status": "Positive (Small/Mod)"})
+        else:
+            res.update({"result": "> 40 mg/dL", "color": "ม่วงเข้ม", "status": "Positive (High)"})
+
+    # 5. SG (ความถ่วงจำเพาะ)
+    elif param_code == "SG":
+        res["ref"] = "1.005 - 1.030"
+        res["color"] = "เขียวมะกอก/เหลือง"
+        try:
+            import re
+            num = float(re.findall(r'\d+\.?\d*', val)[0])
+            res["result"] = f"{num:.3f}"
+            res["status"] = "Normal" if 1.005 <= num <= 1.030 else "Abnormal"
+        except:
+            pass
+
+    # 6. BLO (เลือด)
+    elif param_code == "BLO":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เหลือง (Yellow)", "status": "Normal"})
+        elif "10" in val:
+            res.update({"result": "+ 10 Ery/µL", "color": "เขียวอ่อน (Light Green)", "status": "Positive"})
+        else:
+            res.update({"result": "++ 50 ถึง +++ 250", "color": "เขียวเข้ม (Dark Green)", "status": "Positive (High)"})
+
+    # 7. pH (ความเป็นกรด-ด่าง)
+    elif param_code == "pH":
+        res["ref"] = "5.0 - 8.0"
+        try:
+            import re
+            num = float(re.findall(r'\d+\.?\d*', val)[0])
+            nature = "(Acidic)" if num < 7.0 else "(Alkaline)" if num > 7.0 else "(Neutral)"
+            res["result"] = f"{num:.1f} {nature}"
+            res["color"] = "ส้ม (Orange)" if num < 7.0 else "เขียว/ฟ้า"
+            res["status"] = "Normal" if 5.0 <= num <= 8.0 else "Abnormal"
+        except:
+            pass
+
+    # 8. PRO (โปรตีน)
+    elif param_code == "PRO":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เหลือง/เขียวอ่อน", "status": "Normal"})
+        elif "trace" in val or "30" in val:
+            res.update({"result": "15 - 30 mg/dL (Trace/+1)", "color": "เขียวตองอ่อน", "status": "Positive (Trace)"})
+        else:
+            res.update({"result": "> 100 mg/dL", "color": "เขียว (Green)", "status": "Positive (High)"})
+
+    # 9. NIT (ไนไตรต์)
+    elif param_code == "NIT":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "Negative", "color": "ครีม/ขาว", "status": "Normal"})
+        else:
+            res.update({"result": "Positive", "color": "ชมพู/บานเย็น (Pink)", "status": "Positive"})
+
+    # 10. LEU (เม็ดเลือดขาว)
+    elif param_code == "LEU":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "ขาวอมชมพูอ่อน", "status": "Normal"})
+        elif "25" in val:
+            res.update({"result": "+ 25 Leu/µL", "color": "ชมพูอ่อน", "status": "Positive"})
+        else:
+            res.update({"result": "++ 75 ถึง +++ 500", "color": "ม่วง/ชมพู (Purple)", "status": "Positive (High)"})
+
+    # 11. ASC (วิตามินซี)
+    elif param_code == "ASC":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0 (Negative)", "color": "เขียวอ่อน/เหลือง", "status": "Normal"})
+        else:
+            res.update({"result": val.upper(), "color": "ส้ม", "status": "Positive"})
+
+    return res
+
+# ========================================
 # 🎨 Page Configuration
 # ========================================
 st.set_page_config(
@@ -533,18 +655,32 @@ else:
                                 return "Normal"
 
                             # เตรียมข้อมูลส่งให้ PDF Generator (4 คอลัมน์)
+                            # แมปค่าทั้งหมดผ่านฟังก์ชันเดียว
+                            uro = get_cybow_mapping("URO", latest['urobilinogen'])
+                            glu = get_cybow_mapping("GLU", latest['glucose'])
+                            bil = get_cybow_mapping("BIL", latest['bilirubin'])
+                            ket = get_cybow_mapping("KET", latest['ketones'])
+                            sg  = get_cybow_mapping("SG", latest['specific_gravity'])
+                            blo = get_cybow_mapping("BLO", latest['blood'])
+                            ph  = get_cybow_mapping("pH", latest['ph'])
+                            pro = get_cybow_mapping("PRO", latest['protein'])
+                            nit = get_cybow_mapping("NIT", latest['nitrite'])
+                            leu = get_cybow_mapping("LEU", latest['leukocytes'])
+                            asc = get_cybow_mapping("ASC", latest['ascorbic_acid'])
+
+                            # เตรียม Array ส่งให้ PDF ตามโครงสร้างใหม่: [พารามิเตอร์, Result, Ref, Color, Status]
                             table_data = [
-                                ["GLU (กลูโคส/น้ำตาล)", latest['glucose'], "Negative", get_status(latest['glucose'])],
-                                ["KET (คีโตน)", latest['ketones'], "Negative", get_status(latest['ketones'])],
-                                ["SG (ความถ่วงจำเพาะ)", latest['specific_gravity'], "1.005-1.030", "Normal"],
-                                ["BLO (เลือด)", latest['blood'], "Negative", get_status(latest['blood'])],
-                                ["pH (ความเป็นกรด-ด่าง)", latest['ph'], "5.0-8.0", "Normal"],
-                                ["PRO (โปรตีน)", latest['protein'], "Negative", get_status(latest['protein'])],
-                                ["URO (ยูโรบิลิโนเจน)", latest['urobilinogen'], "0.1-1.0 mg/dL", get_status(latest['urobilinogen'])],
-                                ["BIL (บิลิรูบิน)", latest['bilirubin'], "Negative", get_status(latest['bilirubin'])],
-                                ["NIT (ไนไตรต์)", latest['nitrite'], "Negative", get_status(latest['nitrite'])],
-                                ["LEU (เม็ดเลือดขาว)", latest['leukocytes'], "Negative", get_status(latest['leukocytes'])],
-                                ["ASC (วิตามินซี)", latest['ascorbic_acid'], "Negative", get_status(latest['ascorbic_acid'])]
+                                ["URO (ยูโรบิลิโนเจน)", uro['result'], uro['ref'], uro['color'], uro['status']],
+                                ["GLU (กลูโคส)", glu['result'], glu['ref'], glu['color'], glu['status']],
+                                ["BIL (บิลิรูบิน)", bil['result'], bil['ref'], bil['color'], bil['status']],
+                                ["KET (คีโตน)", ket['result'], ket['ref'], ket['color'], ket['status']],
+                                ["SG (ความถ่วงจำเพาะ)", sg['result'], sg['ref'], sg['color'], sg['status']],
+                                ["BLO (เลือด)", blo['result'], blo['ref'], blo['color'], blo['status']],
+                                ["pH (ความเป็นกรด-ด่าง)", ph['result'], ph['ref'], ph['color'], ph['status']],
+                                ["PRO (โปรตีน)", pro['result'], pro['ref'], pro['color'], pro['status']],
+                                ["NIT (ไนไตรต์)", nit['result'], nit['ref'], nit['color'], nit['status']],
+                                ["LEU (เม็ดเลือดขาว)", leu['result'], leu['ref'], leu['color'], leu['status']],
+                                ["ASC (วิตามินซี)", asc['result'], asc['ref'], asc['color'], asc['status']]
                             ]
 
                             try:
