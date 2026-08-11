@@ -178,10 +178,10 @@ def process_image_with_ai(image_id, user_id, patient_name):
         }}
         """
 
-        # 🌟 4. เรียก OpenRouter API (เปลี่ยนโมเดล และเพิ่ม max_tokens)
+        # 🌟 4. เรียก OpenRouter API (ใช้โมเดลที่รองรับ Vision)
         response = client.chat.completions.create(
-            # แนะนำให้เปลี่ยนเป็น openai/gpt-4o หรือ anthropic/claude-3.5-sonnet เพื่อความแม่นยำสูงสุด
-            model="anthropic/claude-3.5-sonnet", 
+            # ใช้ gpt-4o-mini เพื่อความรวดเร็วและประหยัด หรือเปลี่ยนเป็น openai/gpt-4o สำหรับความแม่นยำสูงสุด
+            model="openai/gpt-4o-mini", 
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
