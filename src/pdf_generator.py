@@ -77,8 +77,8 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
 
     # 3. ตารางข้อมูล (4 คอลัมน์)
     pdf.set_font("THSarabun", "B", 14)
-    headers = ["พารามิเตอร์", "ค่าที่อ่านได้", "แถบสี (Color)", "สถานะ"] 
-    col_widths = [45, 45, 50, 50] 
+    headers = ["พารามิเตอร์", "ค่าที่อ่านได้", "ค่ามาตรฐาน", "สถานะ"]
+    col_widths = [45, 40, 55, 50] 
     for i, header in enumerate(headers):
         pdf.cell(col_widths[i], 10, header, border=1, align="C")
     pdf.ln(10)

@@ -237,11 +237,31 @@ else:
     st.sidebar.markdown("## 🔍 เลือกข้อมูล")
     st.sidebar.markdown("---")
 
+    # Initialize session state for selected patient if not exists
+    if 'selected_patient_key' not in st.session_state:
+        st.session_state['selected_patient_key'] = "📊 แสดงทั้งหมด"
+
+    # Check session state for view_patient_name (from table click)
+    if 'view_patient_name' in st.session_state and st.session_state['view_patient_name']:
+        st.session_state['selected_patient_key'] = st.session_state['view_patient_name']
+        st.session_state['view_patient_name'] = None
+
+    # Calculate index for selectbox
+    patient_options = ["📊 แสดงทั้งหมด"] + sorted(valid_patients)
+    try:
+        default_index = patient_options.index(st.session_state['selected_patient_key'])
+    except ValueError:
+        default_index = 0
+
     selected_patient = st.sidebar.selectbox(
         "👤 เลือกผู้ป่วย:",
-        ["📊 แสดงทั้งหมด"] + sorted(valid_patients),
+        patient_options,
+        index=default_index,
         help="เลือกผู้ป่วยเพื่อดูรายงานส่วนบุคคล"
     )
+
+    # Update session state when selectbox changes
+    st.session_state['selected_patient_key'] = selected_patient
 
     # ========================================
     # 📋 Data Display Section
@@ -274,8 +294,8 @@ else:
         display_cols = ['date', 'notes', 'glucose', 'protein', 'blood', 'ph',
                        'specific_gravity', 'ketones', 'leukocytes']
 
-        # 🌟 2. แสดงข้อความแนะนำการใช้งาน Quick Download
-        st.info("💡 **Tip (Quick Download):** คลิกที่กล่องสี่เหลี่ยมด้านหน้าแถวของคนไข้ เพื่อสร้างและดาวน์โหลดรายงาน PDF ทันที")
+        # 🌟 2. แสดงข้อความแนะนำการใช้งาน
+        st.info("💡 **คำแนะนำ:** คลิกที่กล่องสี่เหลี่ยมด้านหน้าแถวของผู้ป่วย เพื่อดาวน์โหลดรายงาน PDF หรือดูรายละเอียดเพิ่มเติม")
 
         with st.container():
             # 🌟 3. เปิดใช้งาน on_select เพื่อจับเหตุการณ์การคลิกแถวในตาราง
@@ -297,71 +317,87 @@ else:
                 }
             )
 
-        # 🌟 4. ดักจับการเลือกแถว และสร้าง PDF ทันทีที่ถูกคลิก
+        # 🌟 4. ดักจับการเลือกแถว และให้เลือกว่าจะดาวน์โหลด PDF หรือดูรายละเอียด
         selected_rows = event.selection.rows
         if selected_rows:
             # ดึงข้อมูลแถวที่ผู้ใช้คลิก
             selected_idx = selected_rows[0]
             target_record = filtered_df.iloc[selected_idx]
-            
+
             st.markdown("---")
-            st.markdown(f"#### 📄 เตรียมรายงานของ: **{target_record['notes']}**")
-            
-            with st.spinner("กำลังประกอบไฟล์ PDF..."):
-                try:
-                    # สร้าง Case ID จำลอง
-                    date_obj = pd.to_datetime(target_record['date'])
-                    case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
-                    
-                    def get_status(val):
-                        val_str = str(val).lower()
-                        if any(x in val_str for x in ['+', 'pos', 'trace', 'abnormal', '15-40', 'small', 'mod']):
-                            return "Positive/Abnormal"
-                        return "Normal"
+            st.markdown(f"#### 📄 คุณเลือก: **{target_record['notes']}**")
 
-                    # เตรียมข้อมูลส่งให้ PDF Generator
-                    table_data = [
-                        ["GLU (กลูโคส/น้ำตาล)", target_record['glucose'], "-", get_status(target_record['glucose'])],
-                        ["KET (คีโตน)", target_record['ketones'], "-", get_status(target_record['ketones'])],
-                        ["SG (ความถ่วงจำเพาะ)", target_record['specific_gravity'], "-", "Normal"],
-                        ["BLO (เลือด)", target_record['blood'], "-", get_status(target_record['blood'])],
-                        ["pH (ความเป็นกรด-ด่าง)", target_record['ph'], "-", "Normal"],
-                        ["PRO (โปรตีน)", target_record['protein'], "-", get_status(target_record['protein'])],
-                        ["URO (ยูโรบิลิโนเจน)", target_record['urobilinogen'], "-", get_status(target_record['urobilinogen'])],
-                        ["BIL (บิลิรูบิน)", target_record['bilirubin'], "-", get_status(target_record['bilirubin'])],
-                        ["NIT (ไนไตรต์)", target_record['nitrite'], "-", get_status(target_record['nitrite'])],
-                        ["LEU (เม็ดเลือดขาว)", target_record['leukocytes'], "-", get_status(target_record['leukocytes'])],
-                        ["ASC (วิตามินซี)", target_record['ascorbic_acid'], "-", get_status(target_record['ascorbic_acid'])]
-                    ]
+            # แสดง 2 ปุ่มให้เลือก
+            col_action1, col_action2 = st.columns(2)
 
-                    db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
+            with col_action1:
+                view_detail_btn = st.button("👁️ ดูรายละเอียดผู้ป่วย", use_container_width=True, type="primary")
+
+            with col_action2:
+                download_pdf_btn = st.button("📥 ดาวน์โหลด PDF", use_container_width=True)
+
+            # ถ้ากดปุ่ม View Detail
+            if view_detail_btn:
+                st.session_state['view_patient_name'] = target_record['notes']
+                st.rerun()
+
+            # ถ้ากดปุ่ม Download PDF
+            if download_pdf_btn:
+                with st.spinner("กำลังประกอบไฟล์ PDF..."):
                     try:
-                        db_bullets = json.loads(target_record.get('clinical_bullets', '[]'))
-                    except:
-                        db_bullets = []
+                        # สร้าง Case ID จำลอง
+                        date_obj = pd.to_datetime(target_record['date'])
+                        case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
 
-                    # เรียกใช้ฟังก์ชันสร้าง PDF
-                    pdf_bytes = create_pdf(
-                        patient_name=target_record['notes'],
-                        case_id=case_id,
-                        date_str=str(target_record['date']),
-                        table_data=table_data,
-                        summary_text=db_summary,
-                        bullet_points=db_bullets
-                    )
+                        def get_status(val):
+                            val_str = str(val).lower()
+                            if any(x in val_str for x in ['+', 'pos', 'trace', 'abnormal', '15-40', 'small', 'mod']):
+                                return "Positive/Abnormal"
+                            return "Normal"
 
-                    # แสดงปุ่มดาวน์โหลดที่กดได้ทันที
-                    if pdf_bytes:
-                        st.download_button(
-                            label=f"⬇️ โหลด PDF: {target_record['notes']}",
-                            data=pdf_bytes,
-                            file_name=f"{case_id}_{target_record['notes'].replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True,
-                            type="primary"
+                        # เตรียมข้อมูลส่งให้ PDF Generator
+                        table_data = [
+                            ["GLU (กลูโคส/น้ำตาล)", target_record['glucose'], "Negative", get_status(target_record['glucose'])],
+                            ["KET (คีโตน)", target_record['ketones'], "Negative", get_status(target_record['ketones'])],
+                            ["SG (ความถ่วงจำเพาะ)", target_record['specific_gravity'], "1.005-1.030", "Normal"],
+                            ["BLO (เลือด)", target_record['blood'], "Negative", get_status(target_record['blood'])],
+                            ["pH (ความเป็นกรด-ด่าง)", target_record['ph'], "5.0-8.0", "Normal"],
+                            ["PRO (โปรตีน)", target_record['protein'], "Negative", get_status(target_record['protein'])],
+                            ["URO (ยูโรบิลิโนเจน)", target_record['urobilinogen'], "0.1-1.0 mg/dL", get_status(target_record['urobilinogen'])],
+                            ["BIL (บิลิรูบิน)", target_record['bilirubin'], "Negative", get_status(target_record['bilirubin'])],
+                            ["NIT (ไนไตรต์)", target_record['nitrite'], "Negative", get_status(target_record['nitrite'])],
+                            ["LEU (เม็ดเลือดขาว)", target_record['leukocytes'], "Negative", get_status(target_record['leukocytes'])],
+                            ["ASC (วิตามินซี)", target_record['ascorbic_acid'], "Negative", get_status(target_record['ascorbic_acid'])]
+                        ]
+
+                        db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
+                        try:
+                            db_bullets = json.loads(target_record.get('clinical_bullets', '[]'))
+                        except:
+                            db_bullets = []
+
+                        # เรียกใช้ฟังก์ชันสร้าง PDF
+                        pdf_bytes = create_pdf(
+                            patient_name=target_record['notes'],
+                            case_id=case_id,
+                            date_str=str(target_record['date']),
+                            table_data=table_data,
+                            summary_text=db_summary,
+                            bullet_points=db_bullets
                         )
-                except Exception as e:
-                    st.error(f"❌ ระบบออกรายงานขัดข้อง: {e}")
+
+                        # แสดงปุ่มดาวน์โหลดที่กดได้ทันที
+                        if pdf_bytes:
+                            st.download_button(
+                                label=f"⬇️ โหลด PDF: {target_record['notes']}",
+                                data=pdf_bytes,
+                                file_name=f"{case_id}_{target_record['notes'].replace(' ', '_')}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                                type="primary"
+                            )
+                    except Exception as e:
+                        st.error(f"❌ ระบบออกรายงานขัดข้อง: {e}")
     else:
         # ========================================
         # 👤 Individual Patient Report
@@ -378,6 +414,10 @@ else:
                 st.markdown(f"### 👤 รายงานผลตรวจ: **{patient_name}**")
                 latest_date = patient_df.iloc[0]['date']
                 st.caption(f"🕐 ตรวจล่าสุด: {latest_date} | 📊 มี {len(patient_df)} ครั้ง")
+            with col_h2:
+                if st.button("🔙 กลับไปรายการทั้งหมด", use_container_width=True):
+                    st.session_state['selected_patient_key'] = "📊 แสดงทั้งหมด"
+                    st.rerun()
 
             # Latest Test Results in Cards
             st.markdown("#### 🔬 ผลตรวจล่าสุด")
@@ -457,17 +497,17 @@ else:
 
                             # เตรียมข้อมูลส่งให้ PDF Generator (4 คอลัมน์)
                             table_data = [
-                                ["GLU (กลูโคส/น้ำตาล)", latest['glucose'], "-", get_status(latest['glucose'])],
-                                ["KET (คีโตน)", latest['ketones'], "-", get_status(latest['ketones'])],
-                                ["SG (ความถ่วงจำเพาะ)", latest['specific_gravity'], "-", "Normal"],
-                                ["BLO (เลือด)", latest['blood'], "-", get_status(latest['blood'])],
-                                ["pH (ความเป็นกรด-ด่าง)", latest['ph'], "-", "Normal"],
-                                ["PRO (โปรตีน)", latest['protein'], "-", get_status(latest['protein'])],
-                                ["URO (ยูโรบิลิโนเจน)", latest['urobilinogen'], "-", get_status(latest['urobilinogen'])],
-                                ["BIL (บิลิรูบิน)", latest['bilirubin'], "-", get_status(latest['bilirubin'])],
-                                ["NIT (ไนไตรต์)", latest['nitrite'], "-", get_status(latest['nitrite'])],
-                                ["LEU (เม็ดเลือดขาว)", latest['leukocytes'], "-", get_status(latest['leukocytes'])],
-                                ["ASC (วิตามินซี)", latest['ascorbic_acid'], "-", get_status(latest['ascorbic_acid'])]
+                                ["GLU (กลูโคส/น้ำตาล)", latest['glucose'], "Negative", get_status(latest['glucose'])],
+                                ["KET (คีโตน)", latest['ketones'], "Negative", get_status(latest['ketones'])],
+                                ["SG (ความถ่วงจำเพาะ)", latest['specific_gravity'], "1.005-1.030", "Normal"],
+                                ["BLO (เลือด)", latest['blood'], "Negative", get_status(latest['blood'])],
+                                ["pH (ความเป็นกรด-ด่าง)", latest['ph'], "5.0-8.0", "Normal"],
+                                ["PRO (โปรตีน)", latest['protein'], "Negative", get_status(latest['protein'])],
+                                ["URO (ยูโรบิลิโนเจน)", latest['urobilinogen'], "0.1-1.0 mg/dL", get_status(latest['urobilinogen'])],
+                                ["BIL (บิลิรูบิน)", latest['bilirubin'], "Negative", get_status(latest['bilirubin'])],
+                                ["NIT (ไนไตรต์)", latest['nitrite'], "Negative", get_status(latest['nitrite'])],
+                                ["LEU (เม็ดเลือดขาว)", latest['leukocytes'], "Negative", get_status(latest['leukocytes'])],
+                                ["ASC (วิตามินซี)", latest['ascorbic_acid'], "Negative", get_status(latest['ascorbic_acid'])]
                             ]
 
                             try:
