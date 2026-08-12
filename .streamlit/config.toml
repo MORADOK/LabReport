@@ -25,7 +25,7 @@ serverPort = 8501
 enableCORS = false
 enableXsrfProtection = true
 # ปิด headless mode เพื่อลด warnings
-headless = false
+headless = true
 
 [logger]
 # ลดระดับ logging เพื่อลด warnings
