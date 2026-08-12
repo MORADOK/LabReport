@@ -289,7 +289,7 @@ def process_image_with_ai(image_id, user_id, patient_name):
 
         # 🌟 4. เรียก OpenRouter API (Claude Sonnet 4.5 - ความแม่นยำสูงสุดในการวิเคราะห์ภาพทางการแพทย์)
         response = client.chat.completions.create(
-            model="anthropic/claude-sonnet-4-20250514",  # Claude Sonnet 4.5 - Medical-grade vision analysis
+            model="anthropic/claude-sonnet-4.5",  # Claude Sonnet 4.5 - Medical-grade vision analysis
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
