@@ -1,7 +1,6 @@
 import os
 import json
 import base64
-import tempfile
 import threading
 import logging
 import re
@@ -132,26 +131,40 @@ CYBOW_11M_STANDARDS = {
 }
 
 # ---------------------------------------------------------
-# 🖼️ Image Optimization (ป้องกัน Error 402 Token ไม่พอ)
+# 🖼️ Image Optimization (In-Memory Processing - Cloud-Native)
 # ---------------------------------------------------------
-def resize_image_to_base64(image_path: str, max_dimension: int = 1536) -> str:
-    """ฟังก์ชันย่อภาพแบบคงสัดส่วน (ปรับความคมชัดสูงสำหรับงาน Medical Vision)"""
+def resize_image_to_base64_from_bytes(image_bytes: bytes, max_dimension: int = 1536) -> str:
+    """ฟังก์ชันย่อภาพบน RAM โดยไม่พึ่งพา Harddisk (Cloud-Native & Faster)"""
     try:
-        with Image.open(image_path) as img:
+        # โหลดรูปจาก Bytes โดยตรง (ไม่ต้องเขียนไฟล์)
+        with Image.open(io.BytesIO(image_bytes)) as img:
             width, height = img.size
             if max(width, height) > max_dimension:
                 scaling_factor = max_dimension / float(max(width, height))
                 new_size = (int(width * scaling_factor), int(height * scaling_factor))
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
-            
+
             buffered = io.BytesIO()
-            # 🌟 แก้ไขตรงนี้: เพิ่ม quality จาก 85 เป็น 95 เพื่อรักษาสีให้ชัดเจน
             img.convert('RGB').save(buffered, format="JPEG", quality=95)
-            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            return img_str
+            return base64.b64encode(buffered.getvalue()).decode("utf-8")
     except Exception as e:
         logger.error(f"Image resize error: {e}")
         return None
+
+# ---------------------------------------------------------
+# 🛡️ Helper Function: Safe Float Parsing
+# ---------------------------------------------------------
+def extract_safe_float(value, default=0.0):
+    """สกัดเฉพาะตัวเลขออกจากข้อความเพื่อป้องกัน ValueError"""
+    try:
+        val_str = str(value)
+        # ดึงมาเฉพาะตัวเลขและจุดทศนิยม
+        match = re.search(r'\d+\.?\d*', val_str)
+        if match:
+            return float(match.group())
+        return default
+    except Exception:
+        return default
         
 # ---------------------------------------------------------
 # 🚀 Endpoints & LINE Webhook
@@ -200,20 +213,16 @@ def handle_text(event):
         threading.Thread(target=process_image_with_ai, args=(image_id, user_id, patient_name)).start()
 
 # ---------------------------------------------------------
-# 🧠 AI Processing Logic
+# 🧠 AI Processing Logic (Production-Ready)
 # ---------------------------------------------------------
 def process_image_with_ai(image_id, user_id, patient_name):
-    temp_path = None
     try:
-        # 1. โหลดรูปจาก LINE
+        # 1. โหลดรูปจาก LINE เป็น Bytes บน RAM โดยตรง (Cloud-Native, ไม่สร้างไฟล์ขยะ)
         message_content = line_bot_api.get_message_content(image_id)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tf:
-            for chunk in message_content.iter_content():
-                tf.write(chunk)
-            temp_path = tf.name
+        image_bytes = b"".join([chunk for chunk in message_content.iter_content()])
 
-        # 2. ย่อภาพและแปลงเป็น Base64 (ใช้ความละเอียด 1536 เพื่อให้ AI เห็นสีชัดที่สุด)
-        base64_image = resize_image_to_base64(temp_path, max_dimension=1536)
+        # 2. ย่อภาพและแปลงเป็น Base64 (In-Memory Processing)
+        base64_image = resize_image_to_base64_from_bytes(image_bytes, max_dimension=1536)
         if not base64_image:
             raise ValueError("ไม่สามารถประมวลผลไฟล์ภาพได้")
 
@@ -347,30 +356,38 @@ def process_image_with_ai(image_id, user_id, patient_name):
 
         result_text = response.choices[0].message.content
         print(f"--- AI RESPONSE DEBUG ---\n{result_text}\n-------------------------")
-        
-        # 5. ทำความสะอาดข้อความและแปลงเป็น JSON
-        cleaned_text = re.sub(r'```json\n|\n```|```', '', result_text).strip()
-        data = json.loads(cleaned_text)
 
-        # 6. บันทึกลง Database
+        # 5. สกัด JSON อย่างทนทาน (Robust JSON Extraction)
+        # หาตำแหน่งตั้งแต่ { ตัวแรก จนถึง } ตัวสุดท้าย
+        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group())
+        else:
+            raise ValueError("AI ไม่ได้ส่งข้อมูลกลับมาในรูปแบบ JSON")
+
+        # 6. บันทึกลง Database (ป้องกัน ValueError ด้วย extract_safe_float)
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # 🌟 ใช้ Helper Function แทนการ float() โดยตรง
+        sg_val = extract_safe_float(data.get('specific_gravity'), 0.0)
+        ph_val = extract_safe_float(data.get('ph'), 0.0)
+
         success = db_handler.insert_record(
-            date=date_str, 
-            urobilinogen=data.get('urobilinogen', 'N/A'), 
-            glucose=data.get('glucose', 'N/A'), 
-            bilirubin=data.get('bilirubin', 'N/A'), 
-            ketones=data.get('ketones', 'N/A'), 
-            specific_gravity=float(data.get('specific_gravity', 0.0)) if data.get('specific_gravity') != 'N/A' else 0.0, 
-            blood=data.get('blood', 'N/A'), 
-            ph=float(data.get('ph', 0.0)) if data.get('ph') != 'N/A' else 0.0, 
-            protein=data.get('protein', 'N/A'), 
-            nitrite=data.get('nitrite', 'N/A'), 
-            leukocytes=data.get('leukocytes', 'N/A'), 
-            ascorbic_acid=data.get('ascorbic_acid', 'N/A'), 
+            date=date_str,
+            urobilinogen=data.get('urobilinogen', 'N/A'),
+            glucose=data.get('glucose', 'N/A'),
+            bilirubin=data.get('bilirubin', 'N/A'),
+            ketones=data.get('ketones', 'N/A'),
+            specific_gravity=sg_val,
+            blood=data.get('blood', 'N/A'),
+            ph=ph_val,
+            protein=data.get('protein', 'N/A'),
+            nitrite=data.get('nitrite', 'N/A'),
+            leukocytes=data.get('leukocytes', 'N/A'),
+            ascorbic_acid=data.get('ascorbic_acid', 'N/A'),
             notes=patient_name,
             clinical_summary=data.get('clinical_summary', 'ไม่สามารถสรุปผลได้แน่ชัด'),
-            clinical_bullets=json.dumps(data.get('clinical_bullets', [])) # แปลงเป็น string ก่อนเก็บลง DB
+            clinical_bullets=json.dumps(data.get('clinical_bullets', []))
         )
 
         if success:
@@ -386,11 +403,8 @@ def process_image_with_ai(image_id, user_id, patient_name):
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Error processing image: {error_msg}")
-        
+
         line_bot_api.push_message(
             user_id,
             TextSendMessage(text=f"❌ ขออภัยครับ ระบบวิเคราะห์ขัดข้อง\nสาเหตุ: {error_msg}\nกรุณาลองส่งรูปใหม่อีกครั้งครับ")
         )
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
