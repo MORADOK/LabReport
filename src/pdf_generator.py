@@ -21,7 +21,6 @@ class LHomePDFReport(FPDF):
         self.set_y(-20)
         self.set_draw_color(226, 232, 240)
         self.set_line_width(0.5)
-        # self.line(10, self.get_y(), 200, self.get_y()) # Optional dashed line
         
         self.set_font("THSarabun", "", 12)
         self.set_text_color(150, 150, 150)
@@ -45,7 +44,7 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
     pdf.add_page()
     
     # ==========================================
-    # 1. ข้อมูลผู้ป่วย (Grid Layout ฝั่งซ้าย-ขวา)
+    # 1. ข้อมูลผู้ป่วย
     # ==========================================
     pdf.set_text_color(51, 65, 85) # Slate 700
     pdf.set_font("THSarabun", "B", 16)
@@ -80,14 +79,14 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
     pdf.ln(4)
     
     # ==========================================
-    # 2. กล่องสรุปผล (Conclusion Box สีแดงอ่อน/ชมพู)
+    # 2. กล่องสรุปผล (Conclusion Box)
     # ==========================================
     pdf.set_fill_color(254, 242, 242) # สีแดงอ่อน (Red 50)
     pdf.set_draw_color(252, 165, 165) # ขอบสีแดง (Red 300)
     pdf.set_line_width(0.5)
     
-    # วาดกรอบสี่เหลี่ยมรอบสรุปผล
     start_y = pdf.get_y()
+    # ✅ เปลี่ยนจาก round_rect เป็น rect มาตรฐาน
     pdf.rect(10, start_y, 190, 22, style="DF")
     
     pdf.set_y(start_y + 2)
@@ -98,9 +97,8 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
     
     pdf.set_x(12)
     pdf.set_font("THSarabun", "", 16)
-    # ตัดข้อความให้พอดีกล่อง
     pdf.multi_cell(186, 7, str(summary_text), align="L")
-    pdf.ln(8) # เว้นระยะให้ตาราง
+    pdf.ln(8)
 
     # ==========================================
     # 3. หัวตาราง (Navy Blue Header)
@@ -110,14 +108,11 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
     pdf.set_font("THSarabun", "B", 16)
     pdf.set_draw_color(255, 255, 255) # ซ่อนขอบด้วยสีขาว
     
-    # 5 คอลัมน์ (รวมความกว้าง 190mm)
     col_widths = [45, 40, 35, 40, 30] 
     headers = ["พารามิเตอร์", "ค่าที่อ่านได้ (Result)", "ค่ามาตรฐาน (Ref.)", "แถบสี (Color)", "สถานะ"]
     
     for i, header in enumerate(headers):
-        # จัดชิดซ้ายยกเว้นสถานะ
         align = "C" if i == 4 else "L" 
-        # เติม padding ด้านหน้า
         pdf.cell(col_widths[i], 12, f"  {header}", border=1, align=align, fill=True)
     pdf.ln(12)
 
@@ -128,7 +123,6 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
     pdf.set_draw_color(226, 232, 240) # ขอบตารางสีเทาอ่อน
     
     for idx, row in enumerate(table_data):
-        # สลับสีพื้นหลังตาราง (Zebra Striping) แบบบางๆ
         if idx % 2 == 0:
             pdf.set_fill_color(248, 250, 252) # Slate 50
         else:
@@ -136,11 +130,7 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
             
         status_text = str(row[4])
         
-        # คอลัมน์ 1-4 (ตัวหนังสือปกติ)
-        pdf.set_text_color(30, 41, 59) if "Normal" in status_text else pdf.set_text_color(185, 28, 28)
-        
         for i in range(4):
-            # คอลัมน์ Ref เป็นตัวเอียง (Italic) สีเทา เพื่อความโปรเฟสชันนอล
             if i == 2:
                 pdf.set_font("THSarabun", "", 15)
                 pdf.set_text_color(100, 116, 139)
@@ -153,61 +143,55 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
             
             pdf.cell(col_widths[i], 12, f"  {str(row[i])}", border="B", align="L", fill=True)
         
-        # 🌟 คอลัมน์ 5: Status Badges (ป้ายกำกับสถานะ)
+        # 🌟 คอลัมน์ 5: Status Badges (ป้ายกำกับสถานะแบบ Flat UI)
         current_x = pdf.get_x()
         current_y = pdf.get_y()
         
-        # วาดพื้นหลังกล่องให้เต็มเซลล์ก่อน
         pdf.cell(col_widths[4], 12, "", border="B", align="C", fill=True)
         
-        # กำหนดสีป้ายกำกับ (Badge Colors)
         if "Normal" in status_text:
-            pdf.set_fill_color(34, 197, 94)  # เขียว (Green 500)
+            pdf.set_fill_color(34, 197, 94)  # เขียว
             badge_text = "Normal"
         elif "Trace" in status_text or "Small" in status_text or "Mod" in status_text:
-            pdf.set_fill_color(245, 158, 11) # ส้ม (Amber 500)
+            pdf.set_fill_color(245, 158, 11) # ส้ม
             badge_text = "Positive"
         else:
-            pdf.set_fill_color(239, 68, 68)  # แดง (Red 500)
+            pdf.set_fill_color(239, 68, 68)  # แดง
             badge_text = "Positive (High)"
 
-        # คำนวณขนาดและตำแหน่งของป้าย (Pill shape)
         pdf.set_font("THSarabun", "B", 14)
-        badge_w = pdf.get_string_width(badge_text) + 8 # เผื่อขอบซ้ายขวา
+        badge_w = pdf.get_string_width(badge_text) + 8 
         badge_h = 7
         badge_x = current_x + ((col_widths[4] - badge_w) / 2)
         badge_y = current_y + ((12 - badge_h) / 2)
         
-        # วาดสี่เหลี่ยมขอบมน (round_rect ของ fpdf2)
-        pdf.round_rect(badge_x, badge_y, badge_w, badge_h, r=3.5, style="F")
+        # ✅ เปลี่ยนจาก round_rect เป็น rect มาตรฐาน
+        pdf.rect(badge_x, badge_y, badge_w, badge_h, style="F")
         
-        # วางข้อความสีขาวทับลงไป
         pdf.set_xy(badge_x, badge_y)
         pdf.set_text_color(255, 255, 255)
         pdf.cell(badge_w, badge_h, badge_text, align="C")
         
-        # รีเซ็ตตำแหน่ง Y ไปที่บรรทัดถัดไป
         pdf.set_xy(10, current_y + 12)
         
     pdf.ln(8)
 
     # ==========================================
-    # 5. กล่องข้อบ่งชี้ทางคลินิก (Clinical Notes สีฟ้าอ่อน)
+    # 5. กล่องข้อบ่งชี้ทางคลินิก (Clinical Notes)
     # ==========================================
-    pdf.set_fill_color(240, 249, 255) # สีฟ้าอ่อน (Sky 50)
-    pdf.set_draw_color(186, 230, 253) # ขอบสีฟ้า (Sky 200)
+    pdf.set_fill_color(240, 249, 255) # สีฟ้าอ่อน
+    pdf.set_draw_color(186, 230, 253) # ขอบสีฟ้า
     pdf.set_line_width(0.5)
     
-    # คำนวณความสูงกล่องตามจำนวน bullet (ประมาณ 8mm ต่อบรรทัด)
     box_height = 12 + (len(bullet_points) * 9)
     start_y = pdf.get_y()
     
-    # วาดพื้นหลังกล่องแบบขอบมน
-    pdf.round_rect(10, start_y, 190, box_height, r=4, style="DF")
+    # ✅ เปลี่ยนจาก round_rect เป็น rect มาตรฐาน
+    pdf.rect(10, start_y, 190, box_height, style="DF")
     
     pdf.set_y(start_y + 3)
     pdf.set_x(12)
-    pdf.set_text_color(3, 105, 161) # สีน้ำเงินเข้ม (Sky 700)
+    pdf.set_text_color(3, 105, 161) # สีน้ำเงินเข้ม
     pdf.set_font("THSarabun", "B", 18)
     pdf.cell(0, 8, "📝 ข้อบ่งชี้ทางคลินิกและวิเคราะห์ผลอย่างละเอียด:", new_x="LMARGIN", new_y="NEXT", align="L")
     
