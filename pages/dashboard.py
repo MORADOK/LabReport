@@ -2,6 +2,7 @@ import streamlit as st
 import sys
 import os
 import json
+import ast  # สำหรับ robust JSON parsing
 import pandas as pd
 import re
 from datetime import datetime
@@ -51,7 +52,7 @@ def get_cybow_mapping(param_code, raw_val):
         return {"result": "N/A", "ref": "-", "color": "-", "status": "N/A"}
 
     if param_code == "URO":
-        res["ref"] = "0.1 - 1.0"
+        res["ref"] = "0.1 - 1.0"  # ✅ Fixed spacing
         if "0.1" in val or "normal" in val:
             res.update({"result": "0.1 - 1.0", "color": "ครีม/พีชอ่อน", "status": "Normal"})
         elif "1(16)" in val:
@@ -83,7 +84,7 @@ def get_cybow_mapping(param_code, raw_val):
             res.update({"result": "> 40 mg/dL", "color": "ม่วงเข้ม", "status": "Positive (High)"})
             
     elif param_code == "SG":
-        res["ref"] = "1.005 - 1.030"
+        res["ref"] = "1.005 - 1.030"  # ✅ Fixed spacing
         res["color"] = "เขียวมะกอก/เหลือง"
         try:
             num = float(re.findall(r'\d+\.?\d*', val)[0])
@@ -275,9 +276,18 @@ else:
                     case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
                     table_data = prepare_table_data(target_record)
                     
+                    # 🌟 Robust JSON parsing with ast.literal_eval
                     db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-                    try: db_bullets = json.loads(target_record.get('clinical_bullets', '[]'))
-                    except: db_bullets = []
+                    try:
+                        raw_bullets = target_record.get('clinical_bullets', '[]')
+                        if isinstance(raw_bullets, str):
+                            db_bullets = ast.literal_eval(raw_bullets)
+                        else:
+                            db_bullets = raw_bullets
+                        if not isinstance(db_bullets, list):
+                            db_bullets = [str(db_bullets)]
+                    except Exception as e:
+                        db_bullets = ["ไม่สามารถแสดงข้อบ่งชี้ทางคลินิกได้ (Data Format Error)"]
 
                     pdf_bytes = create_pdf(
                         patient_name=target_record['notes'],
@@ -329,8 +339,12 @@ else:
                 st.success(latest['clinical_summary'])
                 if 'clinical_bullets' in latest and latest['clinical_bullets']:
                     try:
-                        bullets = json.loads(latest['clinical_bullets']) if isinstance(latest['clinical_bullets'], str) else latest['clinical_bullets']
-                        if bullets:
+                        raw_bullets = latest['clinical_bullets']
+                        if isinstance(raw_bullets, str):
+                            bullets = ast.literal_eval(raw_bullets)
+                        else:
+                            bullets = raw_bullets
+                        if bullets and isinstance(bullets, list):
                             st.markdown("**ข้อบ่งชี้ทางคลินิก:**")
                             for bullet in bullets: st.markdown(f"• {bullet}")
                     except: pass
@@ -350,9 +364,18 @@ else:
                     case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-001"
                     table_data = prepare_table_data(latest)
                     
+                    # 🌟 Robust JSON parsing with ast.literal_eval
                     db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-                    try: db_bullets = json.loads(latest.get('clinical_bullets', '[]'))
-                    except: db_bullets = []
+                    try:
+                        raw_bullets = latest.get('clinical_bullets', '[]')
+                        if isinstance(raw_bullets, str):
+                            db_bullets = ast.literal_eval(raw_bullets)
+                        else:
+                            db_bullets = raw_bullets
+                        if not isinstance(db_bullets, list):
+                            db_bullets = [str(db_bullets)]
+                    except Exception as e:
+                        db_bullets = ["ไม่สามารถแสดงข้อบ่งชี้ทางคลินิกได้ (Data Format Error)"]
 
                     pdf_bytes = create_pdf(
                         patient_name=patient_name,
