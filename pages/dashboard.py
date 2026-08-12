@@ -60,20 +60,23 @@ def get_cybow_mapping(param_code, raw_val):
             res.update({"result": "> 2.0 (High)", "color": "ชมพู/แดง", "status": "Positive (High)"})
             
     elif param_code == "GLU":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "ฟ้า (Teal)", "status": "Normal"})
+            res.update({"result": "Negative", "color": "ฟ้า (Teal)", "status": "Normal"})
         else:
             res.update({"result": val.replace("±", "+-").upper(), "color": "เขียว/น้ำตาล", "status": "Positive"})
             
     elif param_code == "BIL":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
+            res.update({"result": "Negative", "color": "เบจ/ครีม", "status": "Normal"})
         else:
             res.update({"result": val.upper(), "color": "ชมพู/แดง", "status": "Positive"})
             
     elif param_code == "KET":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
+            res.update({"result": "Negative", "color": "เบจ/ครีม", "status": "Normal"})
         elif "±" in val or "15" in val:
             res.update({"result": "15 - 40 mg/dL", "color": "ชมพู/ม่วงอ่อน", "status": "Positive"})
         else:
@@ -90,8 +93,9 @@ def get_cybow_mapping(param_code, raw_val):
             pass
             
     elif param_code == "BLO":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เหลือง (Yellow)", "status": "Normal"})
+            res.update({"result": "Negative", "color": "เหลือง (Yellow)", "status": "Normal"})
         elif "10" in val:
             res.update({"result": "+ 10 Ery/µL", "color": "เขียวอ่อน (Light Green)", "status": "Positive"})
         else:
@@ -109,30 +113,34 @@ def get_cybow_mapping(param_code, raw_val):
             pass
             
     elif param_code == "PRO":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เหลือง/เขียวอ่อน", "status": "Normal"})
+            res.update({"result": "Negative", "color": "เหลือง/เขียวอ่อน", "status": "Normal"})
         elif "trace" in val or "30" in val:
-            res.update({"result": "15 - 30 mg/dL (Trace/+1)", "color": "เขียวตองอ่อน", "status": "Positive"})
+            res.update({"result": "15 - 30 mg/dL (Trace)", "color": "เขียวตองอ่อน", "status": "Positive"})
         else:
             res.update({"result": "> 100 mg/dL", "color": "เขียว (Green)", "status": "Positive (High)"})
             
     elif param_code == "NIT":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
             res.update({"result": "Negative", "color": "ครีม/ขาว", "status": "Normal"})
         else:
             res.update({"result": "Positive", "color": "ชมพู/บานเย็น (Pink)", "status": "Positive"})
             
     elif param_code == "LEU":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "ขาวอมชมพูอ่อน", "status": "Normal"})
+            res.update({"result": "Negative", "color": "ขาวอมชมพูอ่อน", "status": "Normal"})
         elif "25" in val:
             res.update({"result": "+ 25 Leu/µL", "color": "ชมพูอ่อน", "status": "Positive"})
         else:
             res.update({"result": "++ 75 ถึง +++ 500", "color": "ม่วง/ชมพู (Purple)", "status": "Positive (High)"})
             
     elif param_code == "ASC":
+        res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0 (Negative)", "color": "เขียวอ่อน/เหลือง", "status": "Normal"})
+            res.update({"result": "Negative", "color": "เขียวอ่อน/เหลือง", "status": "Normal"})
         else:
             res.update({"result": val.upper(), "color": "ส้ม", "status": "Positive"})
 
