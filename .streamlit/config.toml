@@ -17,11 +17,15 @@ font = "sans serif"
 [browser]
 # ซ่อน error messages ที่ไม่จำเป็นใน console
 gatherUsageStats = false
+# กดปุ่ม Shift+Ctrl+E เพื่อดู error details หากต้องการ
+serverPort = 8501
 
 [server]
 # เพิ่มความเสถียรของ WebSocket connection
 enableCORS = false
 enableXsrfProtection = true
+# ปิด headless mode เพื่อลด warnings
+headless = false
 
 [logger]
 # ลดระดับ logging เพื่อลด warnings

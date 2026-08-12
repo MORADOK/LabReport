@@ -1,12 +1,25 @@
-fastapi
-uvicorn
-line-bot-sdk
-openai
-streamlit
-pandas
-plotly
-psycopg2-binary
-python-dotenv
-fpdf2
-Pillow
-requests
+# Web Framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# LINE Bot
+line-bot-sdk>=3.5.0
+
+# AI/ML
+openai>=1.3.0
+
+# Data Analysis & Visualization
+streamlit>=1.28.0
+pandas>=2.0.0
+plotly>=5.17.0
+
+# Database
+psycopg2-binary>=2.9.9
+
+# Utilities
+python-dotenv>=1.0.0
+Pillow>=10.0.0
+requests>=2.31.0
+
+# PDF Generation
+fpdf2>=2.7.6

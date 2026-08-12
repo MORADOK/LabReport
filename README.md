@@ -1,16 +1,31 @@
-# UAReport - CYBOW 11M Urine Analysis System
+# 🏥 LHome Urine Tracker - ระบบวิเคราะห์ปัสสาวะอัตโนมัติด้วย AI
 
-ระบบวิเคราะห์ผลตรวจปัสสาวะ CYBOW 11M อัตโนมัติด้วย AI Vision และ LINE Bot
+ระบบวิเคราะห์และจัดการผลตรวจปัสสาวะ CYBOW 11M อัตโนมัติ พร้อม LINE Bot และ Dashboard สำหรับติดตามผลผู้ป่วย
 
 ## 🎯 ฟีเจอร์หลัก
 
-- **LINE Bot Integration**: รับรูปแผ่นตรวจผ่าน LINE Official Account
-- **AI Vision Analysis**: วิเคราะห์รูปแผ่นตรวจด้วย OpenRouter GPT-4o-mini
-- **Auto Data Extraction**: ดึงข้อมูล 11 พารามิเตอร์อัตโนมัติ
-- **Dashboard**: แสดงผลข้อมูลและกราฟแนวโน้มด้วย Streamlit
-- **Database Storage**: บันทึกข้อมูลใน SQLite
-- **Logging System**: ระบบ log แบบครบถ้วน
-- **Error Handling**: จัดการข้อผิดพลาดแบบละเอียด
+### 📸 AI Vision Analysis
+- วิเคราะห์แผ่นตรวจปัสสาวะ CYBOW 11M ด้วย AI (GPT-4o)
+- อ่านค่า 11 พารามิเตอร์ได้แม่นยำ
+- สรุปผลทางคลินิกอัตโนมัติพร้อมข้อบ่งชี้
+
+### 💬 LINE Bot Integration
+- รับรูปแผ่นตรวจผ่าน LINE Official Account
+- ระบุชื่อผู้ป่วยและบันทึกอัตโนมัติ
+- รับผลสรุปทันทีผ่าน LINE
+
+### 📊 Dashboard & Reporting
+- Dashboard แสดงสถิติภาพรวมระบบ
+- ดูประวัติผู้ป่วยแต่ละรายละเอียด
+- กราฟแนวโน้มสุขภาพ (Trend Charts)
+- ดาวน์โหลดรายงาน PDF มาตรฐานทางการแพทย์
+- Export ข้อมูล CSV
+
+### 🗄️ Database (Supabase PostgreSQL)
+- เก็บข้อมูลปลอดภัยบน Cloud
+- Row Level Security (RLS)
+- Auto-migration โครงสร้างตาราง
+- Connection pooling และ retry logic
 
 ## 📋 พารามิเตอร์ที่วิเคราะห์ได้
 
@@ -28,17 +43,13 @@
 
 ## 🛠️ เทคโนโลยี
 
-**Backend:**
-- Python 3.13
-- FastAPI
-- LINE Messaging API
-- OpenRouter API (GPT-4o-mini)
-- SQLite
-
-**Frontend:**
-- Streamlit
-- Pandas
-- Plotly
+- **Backend:** FastAPI, Python 3.10+
+- **Frontend:** Streamlit
+- **Database:** PostgreSQL (Supabase)
+- **AI Model:** GPT-4o (via OpenRouter)
+- **LINE Bot SDK:** line-bot-sdk
+- **Data Processing:** pandas, plotly
+- **PDF Generation:** fpdf2 with THSarabun fonts
 
 ## 📦 การติดตั้ง
 
@@ -78,12 +89,23 @@ cp .env.example .env
 แก้ไขไฟล์ `.env` และใส่ API keys:
 
 ```env
-LINE_CHANNEL_SECRET=your_line_channel_secret_here
-LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token_here
-OPENROUTER_API_KEY=your_openrouter_api_key_here
+# Database (Supabase PostgreSQL)
+DATABASE_URL=postgresql://user:password@host:port/database
+
+# LINE Bot
+LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
+LINE_CHANNEL_SECRET=your_line_channel_secret
+
+# OpenRouter API (สำหรับ GPT-4o Vision)
+OPENROUTER_API_KEY=your_openrouter_api_key
 ```
 
 **วิธีการหา API Keys:**
+
+- **Supabase Database**: https://supabase.com
+  1. สร้างโปรเจคใหม่
+  2. ไปที่ Project Settings → Database
+  3. คัดลอก Connection String (URI mode)
 
 - **LINE API**: https://developers.line.biz/console/
   1. สร้าง Provider และ Channel (Messaging API)
@@ -95,10 +117,10 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 
 ## 🚀 การรันระบบ
 
-### ทดสอบ Database
+### ทดสอบการเชื่อมต่อ Database
 
 ```bash
-python test_database.py
+python -c "from src.analysis import load_data; print(load_data())"
 ```
 
 ### รัน LINE Bot (Backend)
@@ -142,24 +164,24 @@ streamlit run app.py
 
 ```
 UAReport/
-├── .env                    # Environment variables (ห้ามโพสต์ Git!)
-├── .env.example            # ตัวอย่าง env config
-├── .gitignore              # Git ignore rules
-├── README.md               # คู่มือนี้
-├── requirements.txt        # Python dependencies
-├── bot.py                  # LINE Bot (Main - ปรับปรุงแล้ว)
-├── main.py                 # LINE Bot (Old version)
-├── app.py                  # Streamlit homepage
-├── test_database.py        # Database test script
-├── check_models.py         # Gemini model checker
-├── data/
-│   └── urine_records.db    # SQLite database
+├── .streamlit/
+│   └── config.toml         # Streamlit configuration
+├── assets/
+│   └── fonts/              # THSarabun fonts สำหรับ PDF
+├── pages/
+│   └── dashboard.py        # Streamlit dashboard หลัก
 ├── src/
-│   ├── database.py         # Database operations
-│   └── analysis.py         # Data analysis & charts
-├── page/
-│   └── dashboard.py        # Streamlit dashboard
-└── venv/                   # Virtual environment
+│   ├── analysis.py         # โหลดข้อมูลและสร้างกราฟ
+│   ├── db_handler.py       # จัดการ Database (Supabase)
+│   └── pdf_generator.py    # สร้างรายงาน PDF
+├── .env                    # Environment variables (ห้าม commit!)
+├── .env.example            # ตัวอย่าง configuration
+├── .gitignore              # Git ignore rules
+├── app.py                  # Streamlit homepage
+├── bot.py                  # FastAPI LINE Bot Server
+├── requirements.txt        # Python dependencies
+├── README.md               # คู่มือนี้
+└── venv/                   # Virtual environment (ห้าม commit!)
 ```
 
 ## 🔐 ความปลอดภัย
@@ -248,33 +270,56 @@ python -c "from src import database; database.init_db()"
 3. ถ่ายรูปในที่แสงสว่างเพียงพอ
 4. ตรวจสอบ OpenRouter API key และ credits
 
-## 🔄 การปรับปรุงที่ทำไปแล้ว
+## 🔄 การปรับปรุงที่ทำไปแล้ว (Latest Updates)
 
-✅ เพิ่ม logging system
-✅ ปรับปรุง error handling (specific exceptions)
-✅ เพิ่ม input validation
-✅ สร้าง `.env.example` และ `.gitignore`
-✅ ทดสอบระบบทั้งหมด
-✅ เพิ่ม daemon threads เพื่อป้องกัน hanging
-✅ ตรวจสอบ AI response validation
+✅ อัพเกรด AI Model เป็น GPT-4o (ความแม่นยำสูงสุด)
+✅ เพิ่มระบบสรุปผลทางคลินิกอัตโนมัติ
+✅ ปรับปรุง PDF Generator ให้สวยงามและมาตรฐาน
+✅ เพิ่ม Error Handling แบบละเอียด
+✅ ปรับ Requirements.txt ให้มี Version Pinning
+✅ Migration จาก SQLite → PostgreSQL (Supabase)
+✅ เพิ่ม Row Level Security (RLS)
+✅ ปรับปรุง Dashboard UI ให้ทันสมัย
+✅ เพิ่ม Quick Download PDF จากตาราง
 
 ## 📈 แผนพัฒนาในอนาคต
 
-- [ ] เพิ่ม Connection Pooling สำหรับ Database
-- [ ] เพิ่ม Unit Tests
-- [ ] เพิ่ม Type Hints ทุกฟังก์ชัน
-- [ ] สร้าง Docker Container
-- [ ] เพิ่ม User Authentication
-- [ ] Export รายงานเป็น PDF
+- [ ] เพิ่ม User Authentication & Role-based Access
+- [ ] เพิ่ม Unit Tests และ Integration Tests
+- [ ] สร้าง Docker Container สำหรับ Deployment
+- [ ] เพิ่ม Notification Alert สำหรับค่าผิดปกติ
+- [ ] รองรับแผ่นตรวจหลายรุ่น
+
+## 📊 ตารางสรุปพารามิเตอร์ CYBOW 11M
+
+| Parameter | ชื่อไทย | ค่ามาตรฐาน | ความหมายเมื่อผิดปกติ |
+|-----------|---------|------------|---------------------|
+| URO | ยูโรบิลิโนเจน | 0.1 - 1.0 mg/dL | ปัญหาตับ/ถุงน้ำดี |
+| GLU | กลูโคส | Negative | เบาหวาน |
+| BIL | บิลิรูบิน | Negative | ตับอักเสบ/ดีซ่าน |
+| KET | คีโตน | Negative | เบาหวานไม่ควบคุม/อดอาหาร |
+| SG | ความถ่วงจำเพาะ | 1.005 - 1.030 | ขาดน้ำ/ไตทำงานผิดปกติ |
+| BLO | เลือด | Negative | UTI/นิ่วในไต/ภาวะไตอักเสบ |
+| pH | ความเป็นกรด-ด่าง | 5.0 - 8.0 | กรด-ด่างผิดปกติ |
+| PRO | โปรตีน | Negative | โรคไต/ความดันโลหิตสูง |
+| NIT | ไนไตรต์ | Negative | ติดเชื้อแบคทีเรีย (UTI) |
+| LEU | เม็ดเลือดขาว | Negative | การอักเสบ/ติดเชื้อ |
+| ASC | วิตามินซี | Negative | รับประทานวิตามินซีมาก |
 
 ## 👨‍💻 ผู้พัฒนา
 
-ระบบนี้พัฒนาด้วย Python และ AI สำหรับอำนวยความสะดวกในการวิเคราะห์ผลตรวจปัสสาวะ
+พัฒนาโดย LHome Medical Team
+ระบบนี้ใช้ Python และ AI เพื่ออำนวยความสะดวกในการวิเคราะห์ผลตรวจปัสสาวะ
 
 ## 📄 License
 
+สงวนลิขสิทธิ์ © 2024-2026 LHome Medical System
 ระบบนี้สร้างขึ้นเพื่อการศึกษาและใช้ในสถานพยาบาล
 
 ---
 
-**หมายเหตุ:** กรุณาอ่านคู่มือให้ละเอียดก่อนใช้งาน และอย่าลืม rotate API keys หากเคยโพสต์ขึ้น Git โดยไม่ตั้งใจ
+**⚠️ หมายเหตุสำคัญ:**
+- ระบบนี้เป็นเครื่องมือช่วยคัดกรองเบื้องต้น ไม่ใช่การวินิจฉัยทางการแพทย์
+- ควรปรึกษาแพทย์เพื่อการวินิจฉัยที่ถูกต้อง
+- กรุณาอ่านคู่มือให้ละเอียดก่อนใช้งาน
+- อย่าลืม rotate API keys หากเคยโพสต์ขึ้น Git โดยไม่ตั้งใจ

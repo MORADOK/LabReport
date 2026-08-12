@@ -3,6 +3,7 @@ import sys
 import os
 import json
 import pandas as pd
+import re
 from datetime import datetime
 from src.pdf_generator import create_pdf
 
@@ -10,128 +11,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
 from src.analysis import load_data, create_trend_chart
-
-# ========================================
-# 🔬 Helper Functions
-# ========================================
-def get_cybow_mapping(param_code, raw_val):
-    """
-    ฟังก์ชันแปลงค่าดิบจาก AI ให้เป็นข้อมูล 4 คอลัมน์แบบ Medical Grade
-    อ้างอิงมาตรฐาน CYBOW 11M Color Chart
-    """
-    val = str(raw_val).lower().strip()
-
-    # โครงสร้างเริ่มต้น (กรณีหาค่าไม่เจอ)
-    res = {
-        "result": str(raw_val),
-        "ref": "Negative",
-        "color": "-",
-        "status": "Normal"
-    }
-
-    if val in ["n/a", "-", "", "none"]:
-        return {"result": "N/A", "ref": "-", "color": "-", "status": "N/A"}
-
-    # 1. URO (ยูโรบิลิโนเจน)
-    if param_code == "URO":
-        res["ref"] = "0.1 - 1.0"
-        if "0.1" in val or "normal" in val:
-            res.update({"result": "0.1 - 1.0", "color": "ครีม/พีชอ่อน", "status": "Normal"})
-        elif "1(16)" in val:
-            res.update({"result": "1.0 (16 µmol/L)", "color": "พีช", "status": "Normal"})
-        else: # 2(33), 4(66), 8(131)
-            res.update({"result": f"> 2.0 (High)", "color": "ชมพู/แดง", "status": "Positive (High)"})
-
-    # 2. GLU (กลูโคส)
-    elif param_code == "GLU":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "ฟ้า (Teal)", "status": "Normal"})
-        else:
-            res.update({"result": val.replace("±", "+-").upper(), "color": "เขียว/น้ำตาล", "status": "Positive"})
-
-    # 3. BIL (บิลิรูบิน)
-    elif param_code == "BIL":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
-        else:
-            res.update({"result": val.upper(), "color": "ชมพู/แดง", "status": "Positive"})
-
-    # 4. KET (คีโตน)
-    elif param_code == "KET":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
-        elif "±" in val or "15" in val:
-            res.update({"result": "15 - 40 mg/dL", "color": "ชมพู/ม่วงอ่อน", "status": "Positive (Small/Mod)"})
-        else:
-            res.update({"result": "> 40 mg/dL", "color": "ม่วงเข้ม", "status": "Positive (High)"})
-
-    # 5. SG (ความถ่วงจำเพาะ)
-    elif param_code == "SG":
-        res["ref"] = "1.005 - 1.030"
-        res["color"] = "เขียวมะกอก/เหลือง"
-        try:
-            import re
-            num = float(re.findall(r'\d+\.?\d*', val)[0])
-            res["result"] = f"{num:.3f}"
-            res["status"] = "Normal" if 1.005 <= num <= 1.030 else "Abnormal"
-        except:
-            pass
-
-    # 6. BLO (เลือด)
-    elif param_code == "BLO":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เหลือง (Yellow)", "status": "Normal"})
-        elif "10" in val:
-            res.update({"result": "+ 10 Ery/µL", "color": "เขียวอ่อน (Light Green)", "status": "Positive"})
-        else:
-            res.update({"result": "++ 50 ถึง +++ 250", "color": "เขียวเข้ม (Dark Green)", "status": "Positive (High)"})
-
-    # 7. pH (ความเป็นกรด-ด่าง)
-    elif param_code == "pH":
-        res["ref"] = "5.0 - 8.0"
-        try:
-            import re
-            num = float(re.findall(r'\d+\.?\d*', val)[0])
-            nature = "(Acidic)" if num < 7.0 else "(Alkaline)" if num > 7.0 else "(Neutral)"
-            res["result"] = f"{num:.1f} {nature}"
-            res["color"] = "ส้ม (Orange)" if num < 7.0 else "เขียว/ฟ้า"
-            res["status"] = "Normal" if 5.0 <= num <= 8.0 else "Abnormal"
-        except:
-            pass
-
-    # 8. PRO (โปรตีน)
-    elif param_code == "PRO":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "เหลือง/เขียวอ่อน", "status": "Normal"})
-        elif "trace" in val or "30" in val:
-            res.update({"result": "15 - 30 mg/dL (Trace/+1)", "color": "เขียวตองอ่อน", "status": "Positive (Trace)"})
-        else:
-            res.update({"result": "> 100 mg/dL", "color": "เขียว (Green)", "status": "Positive (High)"})
-
-    # 9. NIT (ไนไตรต์)
-    elif param_code == "NIT":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "Negative", "color": "ครีม/ขาว", "status": "Normal"})
-        else:
-            res.update({"result": "Positive", "color": "ชมพู/บานเย็น (Pink)", "status": "Positive"})
-
-    # 10. LEU (เม็ดเลือดขาว)
-    elif param_code == "LEU":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0", "color": "ขาวอมชมพูอ่อน", "status": "Normal"})
-        elif "25" in val:
-            res.update({"result": "+ 25 Leu/µL", "color": "ชมพูอ่อน", "status": "Positive"})
-        else:
-            res.update({"result": "++ 75 ถึง +++ 500", "color": "ม่วง/ชมพู (Purple)", "status": "Positive (High)"})
-
-    # 11. ASC (วิตามินซี)
-    elif param_code == "ASC":
-        if val in ["neg.", "negative", "0", "neg"]:
-            res.update({"result": "0 (Negative)", "color": "เขียวอ่อน/เหลือง", "status": "Normal"})
-        else:
-            res.update({"result": val.upper(), "color": "ส้ม", "status": "Positive"})
-
-    return res
 
 # ========================================
 # 🎨 Page Configuration
@@ -148,87 +27,157 @@ st.set_page_config(
 # ========================================
 st.markdown("""
 <style>
-    /* Header Styling */
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #1e3a8a;
-        margin-bottom: 0.5rem;
-        text-align: center;
-    }
-    .sub-header {
-        font-size: 1.1rem;
-        color: #64748b;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-
-    /* Metric Card Styling */
-    div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    div[data-testid="metric-container"] > label {
-        color: white !important;
-        font-weight: 600;
-    }
-    div[data-testid="metric-container"] > div {
-        color: white !important;
-        font-size: 2rem !important;
-        font-weight: 700 !important;
-    }
-
-    /* Table Styling */
-    .dataframe {
-        border-radius: 8px;
-        overflow: hidden;
-    }
-
-    /* Button Styling */
-    .stDownloadButton button {
-        border-radius: 8px;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    .stDownloadButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
-    }
-
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
-    }
-
-    /* Container Styling */
-    div[data-testid="stVerticalBlock"] > div:has(> div.element-container) {
-        background-color: white;
-        border-radius: 12px;
-        padding: 1rem;
-    }
+    .main-header { font-size: 2.5rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.5rem; text-align: center; }
+    .sub-header { font-size: 1.1rem; color: #64748b; text-align: center; margin-bottom: 2rem; }
+    div[data-testid="metric-container"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    div[data-testid="metric-container"] > label { color: white !important; font-weight: 600; }
+    div[data-testid="metric-container"] > div { color: white !important; font-size: 2rem !important; font-weight: 700 !important; }
+    .dataframe { border-radius: 8px; overflow: hidden; }
+    .stDownloadButton button { border-radius: 8px; font-weight: 600; transition: all 0.3s ease; }
+    .stDownloadButton button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
+    section[data-testid="stSidebar"] { background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%); }
+    div[data-testid="stVerticalBlock"] > div:has(> div.element-container) { background-color: white; border-radius: 12px; padding: 1rem; }
 </style>
 """, unsafe_allow_html=True)
 
 # ========================================
+# 🌟 Data Mapping (แปลงค่าดิบเป็น 4 คอลัมน์)
+# ========================================
+def get_cybow_mapping(param_code, raw_val):
+    val = str(raw_val).lower().strip()
+    res = {"result": str(raw_val), "ref": "Negative", "color": "-", "status": "Normal"}
+    
+    if val in ["n/a", "-", "", "none"]:
+        return {"result": "N/A", "ref": "-", "color": "-", "status": "N/A"}
+
+    if param_code == "URO":
+        res["ref"] = "0.1 - 1.0"
+        if "0.1" in val or "normal" in val:
+            res.update({"result": "0.1 - 1.0", "color": "ครีม/พีชอ่อน", "status": "Normal"})
+        elif "1(16)" in val:
+            res.update({"result": "1.0 (16 µmol/L)", "color": "พีช", "status": "Normal"})
+        else:
+            res.update({"result": "> 2.0 (High)", "color": "ชมพู/แดง", "status": "Positive (High)"})
+            
+    elif param_code == "GLU":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "ฟ้า (Teal)", "status": "Normal"})
+        else:
+            res.update({"result": val.replace("±", "+-").upper(), "color": "เขียว/น้ำตาล", "status": "Positive"})
+            
+    elif param_code == "BIL":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
+        else:
+            res.update({"result": val.upper(), "color": "ชมพู/แดง", "status": "Positive"})
+            
+    elif param_code == "KET":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เบจ/ครีม", "status": "Normal"})
+        elif "±" in val or "15" in val:
+            res.update({"result": "15 - 40 mg/dL", "color": "ชมพู/ม่วงอ่อน", "status": "Positive"})
+        else:
+            res.update({"result": "> 40 mg/dL", "color": "ม่วงเข้ม", "status": "Positive (High)"})
+            
+    elif param_code == "SG":
+        res["ref"] = "1.005 - 1.030"
+        res["color"] = "เขียวมะกอก/เหลือง"
+        try:
+            num = float(re.findall(r'\d+\.?\d*', val)[0])
+            res["result"] = f"{num:.3f}"
+            res["status"] = "Normal" if 1.005 <= num <= 1.030 else "Abnormal"
+        except:
+            pass
+            
+    elif param_code == "BLO":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เหลือง (Yellow)", "status": "Normal"})
+        elif "10" in val:
+            res.update({"result": "+ 10 Ery/µL", "color": "เขียวอ่อน (Light Green)", "status": "Positive"})
+        else:
+            res.update({"result": "++ 50 ถึง +++ 250", "color": "เขียวเข้ม (Dark Green)", "status": "Positive (High)"})
+            
+    elif param_code == "pH":
+        res["ref"] = "5.0 - 8.0"
+        try:
+            num = float(re.findall(r'\d+\.?\d*', val)[0])
+            nature = "(Acidic)" if num < 7.0 else "(Alkaline)" if num > 7.0 else "(Neutral)"
+            res["result"] = f"{num:.1f} {nature}"
+            res["color"] = "ส้ม (Orange)" if num < 7.0 else "เขียว/ฟ้า"
+            res["status"] = "Normal" if 5.0 <= num <= 8.0 else "Abnormal"
+        except:
+            pass
+            
+    elif param_code == "PRO":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "เหลือง/เขียวอ่อน", "status": "Normal"})
+        elif "trace" in val or "30" in val:
+            res.update({"result": "15 - 30 mg/dL (Trace/+1)", "color": "เขียวตองอ่อน", "status": "Positive"})
+        else:
+            res.update({"result": "> 100 mg/dL", "color": "เขียว (Green)", "status": "Positive (High)"})
+            
+    elif param_code == "NIT":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "Negative", "color": "ครีม/ขาว", "status": "Normal"})
+        else:
+            res.update({"result": "Positive", "color": "ชมพู/บานเย็น (Pink)", "status": "Positive"})
+            
+    elif param_code == "LEU":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0", "color": "ขาวอมชมพูอ่อน", "status": "Normal"})
+        elif "25" in val:
+            res.update({"result": "+ 25 Leu/µL", "color": "ชมพูอ่อน", "status": "Positive"})
+        else:
+            res.update({"result": "++ 75 ถึง +++ 500", "color": "ม่วง/ชมพู (Purple)", "status": "Positive (High)"})
+            
+    elif param_code == "ASC":
+        if val in ["neg.", "negative", "0", "neg"]:
+            res.update({"result": "0 (Negative)", "color": "เขียวอ่อน/เหลือง", "status": "Normal"})
+        else:
+            res.update({"result": val.upper(), "color": "ส้ม", "status": "Positive"})
+
+    return res
+
+# Helper Function สำหรับเตรียมข้อมูล 5 คอลัมน์
+def prepare_table_data(data):
+    uro = get_cybow_mapping("URO", data.get('urobilinogen', 'N/A'))
+    glu = get_cybow_mapping("GLU", data.get('glucose', 'N/A'))
+    bil = get_cybow_mapping("BIL", data.get('bilirubin', 'N/A'))
+    ket = get_cybow_mapping("KET", data.get('ketones', 'N/A'))
+    sg  = get_cybow_mapping("SG", data.get('specific_gravity', 'N/A'))
+    blo = get_cybow_mapping("BLO", data.get('blood', 'N/A'))
+    ph  = get_cybow_mapping("pH", data.get('ph', 'N/A'))
+    pro = get_cybow_mapping("PRO", data.get('protein', 'N/A'))
+    nit = get_cybow_mapping("NIT", data.get('nitrite', 'N/A'))
+    leu = get_cybow_mapping("LEU", data.get('leukocytes', 'N/A'))
+    asc = get_cybow_mapping("ASC", data.get('ascorbic_acid', 'N/A'))
+
+    return [
+        ["URO (ยูโรบิลิโนเจน)", uro['result'], uro['ref'], uro['color'], uro['status']],
+        ["GLU (กลูโคส)", glu['result'], glu['ref'], glu['color'], glu['status']],
+        ["BIL (บิลิรูบิน)", bil['result'], bil['ref'], bil['color'], bil['status']],
+        ["KET (คีโตน)", ket['result'], ket['ref'], ket['color'], ket['status']],
+        ["SG (ความถ่วงจำเพาะ)", sg['result'], sg['ref'], sg['color'], sg['status']],
+        ["BLO (เลือด)", blo['result'], blo['ref'], blo['color'], blo['status']],
+        ["pH (ความเป็นกรด-ด่าง)", ph['result'], ph['ref'], ph['color'], ph['status']],
+        ["PRO (โปรตีน)", pro['result'], pro['ref'], pro['color'], pro['status']],
+        ["NIT (ไนไตรต์)", nit['result'], nit['ref'], nit['color'], nit['status']],
+        ["LEU (เม็ดเลือดขาว)", leu['result'], leu['ref'], leu['color'], leu['status']],
+        ["ASC (วิตามินซี)", asc['result'], asc['ref'], asc['color'], asc['status']]
+    ]
+
+# ========================================
 # 📊 Load Data
 # ========================================
-@st.cache_data(ttl=60)  # Cache for 60 seconds
+@st.cache_data(ttl=60)
 def get_data():
-    """Load data with caching"""
     return load_data()
 
 with st.spinner("🔄 กำลังโหลดข้อมูล..."):
     df = get_data()
 
-# Show connection status
 if df.empty:
     st.sidebar.warning("⚠️ Database Connection")
-    st.sidebar.caption("ไม่สามารถโหลดข้อมูลได้ อาจเป็นเพราะ:")
-    st.sidebar.caption("• Network connection issue")
-    st.sidebar.caption("• ยังไม่มีข้อมูลในระบบ")
-    st.sidebar.caption("• RLS policy configuration")
 else:
     st.sidebar.success(f"✅ Connected: {len(df)} records")
 
@@ -238,77 +187,8 @@ else:
 st.markdown('<h1 class="main-header">🏥 LHome Medical Dashboard</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">ระบบวิเคราะห์ผลตรวจปัสสาวะด้วย AI | Urine Analysis System</p>', unsafe_allow_html=True)
 
-# ========================================
-# 📈 Main Dashboard
-# ========================================
 if df.empty:
     st.warning("⚠️ ไม่สามารถโหลดข้อมูลจาก Database")
-
-    # Troubleshooting Section
-    with st.expander("🔧 วิธีแก้ไขปัญหา", expanded=True):
-        st.markdown("""
-        ### สาเหตุที่เป็นไปได้:
-
-        **1. ยังไม่มีข้อมูลในระบบ**
-        - ✅ ทดสอบส่งข้อมูลผ่าน LINE Bot ก่อน
-
-        **2. ปัญหาการเชื่อมต่อ Database**
-        - ตรวจสอบ `DATABASE_URL` ใน `.env`
-        - ตรวจสอบ network connection
-        - ตรวจสอบ Supabase service status
-
-        **3. RLS Policy Configuration**
-        - RLS อาจบล็อกการเข้าถึงข้อมูล
-        - ตรวจสอบว่า policy สำหรับ service role ตั้งค่าถูกต้อง
-        - ลองรัน: `python -c "from src import db_handler"`
-
-        **4. ทดสอบบน Production (Streamlit Cloud)**
-        - ปัญหาอาจเกิดเฉพาะใน local environment
-        - Streamlit Cloud มี network connection ที่ดีกว่า
-        - ลอง deploy และทดสอบบน cloud
-        """)
-
-    # วิธีการใช้งาน
-    st.markdown("---")
-    st.markdown("### 📝 วิธีการใช้งานระบบ:")
-
-    col_step1, col_step2, col_step3 = st.columns(3)
-
-    with col_step1:
-        st.info("""
-        **1️⃣ เพิ่มเพื่อน LINE Bot**
-
-        Scan QR Code หรือเพิ่มเพื่อน LINE Bot ของระบบ
-        """)
-
-    with col_step2:
-        st.info("""
-        **2️⃣ ส่งรูปและข้อมูล**
-
-        • ส่งรูปแผ่นตรวจปัสสาวะ
-        • ระบุชื่อ-นามสกุลผู้ป่วย
-        """)
-
-    with col_step3:
-        st.info("""
-        **3️⃣ ดูผลที่ Dashboard**
-
-        ระบบจะวิเคราะห์และแสดงผลที่นี่อัตโนมัติ
-        """)
-
-    # Technical Details
-    st.markdown("---")
-    with st.expander("🔍 ข้อมูลทางเทคนิค"):
-        st.code("""
-# ตรวจสอบการเชื่อมต่อ
-python -c "from src.analysis import load_data; print(load_data())"
-
-# ตรวจสอบ database handler
-python -c "from src import db_handler; print('OK')"
-
-# ตรวจสอบ environment variables
-python -c "import os; from dotenv import load_dotenv; load_dotenv(); print('DB:', bool(os.getenv('DATABASE_URL')))"
-        """, language="bash")
 else:
     # ========================================
     # 🎯 KPI Metrics Section
@@ -320,91 +200,27 @@ else:
 
     st.markdown("### 📊 สถิติภาพรวม")
     col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(
-            label="👥 ผู้ป่วยทั้งหมด",
-            value=f"{len(valid_patients)}",
-            delta="คน"
-        )
-
-    with col2:
-        st.metric(
-            label="📋 จำนวนการตรวจ",
-            value=f"{total_records}",
-            delta="เคส"
-        )
-
-    with col3:
-        st.metric(
-            label="🩸 พบเลือด",
-            value=f"{abnormal_blood}",
-            delta="เคส" if abnormal_blood > 0 else "ปกติ",
-            delta_color="inverse"
-        )
-
-    with col4:
-        st.metric(
-            label="🧪 พบโปรตีน",
-            value=f"{abnormal_protein}",
-            delta="เคส" if abnormal_protein > 0 else "ปกติ",
-            delta_color="inverse"
-        )
-
+    with col1: st.metric("👥 ผู้ป่วยทั้งหมด", f"{len(valid_patients)}", "คน")
+    with col2: st.metric("📋 จำนวนการตรวจ", f"{total_records}", "เคส")
+    with col3: st.metric("🩸 พบเลือด", f"{abnormal_blood}", "เคส" if abnormal_blood > 0 else "ปกติ", delta_color="inverse")
+    with col4: st.metric("🧪 พบโปรตีน", f"{abnormal_protein}", "เคส" if abnormal_protein > 0 else "ปกติ", delta_color="inverse")
     st.markdown("---")
 
     # ========================================
     # 🔍 Sidebar Filter
     # ========================================
     st.sidebar.markdown("## 🔍 เลือกข้อมูล")
-    st.sidebar.markdown("---")
-
-    # Initialize session state for selected patient if not exists
-    if 'selected_patient_key' not in st.session_state:
-        st.session_state['selected_patient_key'] = "📊 แสดงทั้งหมด"
-
-    # Check session state for view_patient_name (from table click)
-    if 'view_patient_name' in st.session_state and st.session_state['view_patient_name']:
-        st.session_state['selected_patient_key'] = st.session_state['view_patient_name']
-        st.session_state['view_patient_name'] = None
-
-    # Calculate index for selectbox
-    patient_options = ["📊 แสดงทั้งหมด"] + sorted(valid_patients)
-    try:
-        default_index = patient_options.index(st.session_state['selected_patient_key'])
-    except ValueError:
-        default_index = 0
-
-    selected_patient = st.sidebar.selectbox(
-        "👤 เลือกผู้ป่วย:",
-        patient_options,
-        index=default_index,
-        help="เลือกผู้ป่วยเพื่อดูรายงานส่วนบุคคล"
-    )
-
-    # Update session state when selectbox changes
-    st.session_state['selected_patient_key'] = selected_patient
+    selected_patient = st.sidebar.selectbox("👤 เลือกผู้ป่วย:", ["📊 แสดงทั้งหมด"] + sorted(valid_patients))
 
     # ========================================
     # 📋 Data Display Section
     # ========================================
     if selected_patient == "📊 แสดงทั้งหมด":
         st.markdown("### 📋 รายการตรวจทั้งหมด")
-
-        # 1. ส่วนตัวกรองข้อมูล (Filter)
+        
         col_f1, col_f2 = st.columns([1, 1])
-        with col_f1:
-            date_filter = st.date_input(
-                "📅 กรองตามวันที่:",
-                value=None,
-                help="เลือกวันที่ต้องการดู (เว้นว่างเพื่อแสดงทั้งหมด)"
-            )
-        with col_f2:
-            search_term = st.text_input(
-                "🔎 ค้นหาชื่อ:",
-                placeholder="พิมพ์ชื่อผู้ป่วย...",
-                help="ค้นหาด้วยชื่อผู้ป่วย"
-            )
+        with col_f1: date_filter = st.date_input("📅 กรองตามวันที่:", value=None)
+        with col_f2: search_term = st.text_input("🔎 ค้นหาชื่อ:", placeholder="พิมพ์ชื่อผู้ป่วย...")
 
         filtered_df = df.copy()
         if date_filter:
@@ -413,24 +229,21 @@ else:
         if search_term:
             filtered_df = filtered_df[filtered_df['notes'].str.contains(search_term, case=False, na=False)]
 
-        display_cols = ['date', 'notes', 'glucose', 'protein', 'blood', 'ph',
-                       'specific_gravity', 'ketones', 'leukocytes']
+        display_cols = ['date', 'notes', 'glucose', 'protein', 'blood', 'ph', 'specific_gravity', 'ketones', 'leukocytes']
 
-        # 🌟 2. แสดงข้อความแนะนำการใช้งาน
-        st.info("💡 **คำแนะนำ:** คลิกที่กล่องสี่เหลี่ยมด้านหน้าแถวของผู้ป่วย เพื่อดาวน์โหลดรายงาน PDF หรือดูรายละเอียดเพิ่มเติม")
+        st.info("💡 **Tip (Quick Download):** คลิกที่กล่องสี่เหลี่ยมด้านหน้าแถวของคนไข้ เพื่อสร้างและดาวน์โหลดรายงาน PDF ทันที")
 
         with st.container():
-            # 🌟 3. เปิดใช้งาน on_select เพื่อจับเหตุการณ์การคลิกแถวในตาราง
             event = st.dataframe(
                 filtered_df[display_cols],
                 use_container_width=True,
                 height=400,
                 hide_index=True,
-                on_select="rerun", # สั่งให้โค้ดทำงานใหม่เมื่อมีการเลือก
-                selection_mode="single-row", # บังคับให้เลือกทีละ 1 แถว
+                on_select="rerun", 
+                selection_mode="single-row",
                 column_config={
                     "date": st.column_config.DatetimeColumn("📅 วันที่", format="DD/MM/YYYY HH:mm"),
-                    "notes": st.column_config.TextColumn("👤 ชื่อผู้ป่วย", width="medium"),
+                    "notes": st.column_config.TextColumn("👤 ชื่อผู้ป่วย"),
                     "glucose": st.column_config.TextColumn("🍬 Glucose"),
                     "protein": st.column_config.TextColumn("🧪 Protein"),
                     "blood": st.column_config.TextColumn("🩸 Blood"),
@@ -439,124 +252,46 @@ else:
                 }
             )
 
-        # 🌟 4. ดักจับการเลือกแถว และให้เลือกว่าจะดาวน์โหลด PDF หรือดูรายละเอียด
+        # 🌟 Quick Download Logic
         selected_rows = event.selection.rows
         if selected_rows:
-            # ดึงข้อมูลแถวที่ผู้ใช้คลิก
             selected_idx = selected_rows[0]
             target_record = filtered_df.iloc[selected_idx]
-
+            
             st.markdown("---")
-            st.markdown(f"#### 📄 คุณเลือก: **{target_record['notes']}**")
+            st.markdown(f"#### 📄 เตรียมรายงานของ: **{target_record['notes']}**")
+            
+            with st.spinner("กำลังประกอบไฟล์ PDF..."):
+                try:
+                    date_obj = pd.to_datetime(target_record['date'])
+                    case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
+                    table_data = prepare_table_data(target_record)
+                    
+                    db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
+                    try: db_bullets = json.loads(target_record.get('clinical_bullets', '[]'))
+                    except: db_bullets = []
 
-            # แสดง 2 ปุ่มให้เลือก
-            col_action1, col_action2 = st.columns(2)
+                    pdf_bytes = create_pdf(
+                        patient_name=target_record['notes'],
+                        case_id=case_id,
+                        date_str=str(target_record['date']),
+                        table_data=table_data,
+                        summary_text=db_summary,
+                        bullet_points=db_bullets
+                    )
 
-            with col_action1:
-                view_detail_btn = st.button("👁️ ดูรายละเอียดผู้ป่วย", use_container_width=True, type="primary")
-
-            with col_action2:
-                download_pdf_btn = st.button("📥 ดาวน์โหลด PDF", use_container_width=True)
-
-            # ถ้ากดปุ่ม View Detail
-            if view_detail_btn:
-                st.session_state['view_patient_name'] = target_record['notes']
-                st.rerun()
-
-            # ถ้ากดปุ่ม Download PDF
-            if download_pdf_btn:
-                with st.spinner("กำลังประกอบไฟล์ PDF..."):
-                    try:
-                        # สร้าง Case ID จำลอง
-                        date_obj = pd.to_datetime(target_record['date'])
-                        case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
-
-                        def get_status(param_name, val):
-                            val_str = str(val).lower().strip()
-
-                            # หากเป็นค่าว่างหรือ AI อ่านไม่ได้
-                            if val_str in ["n/a", "-", "", "none"]:
-                                return "N/A"
-
-                            # กลุ่มที่ 1: ต้องเป็น Negative ถึงจะปกติ (Glucose, Ketones, Blood, Protein, Bilirubin, Nitrite, Leukocytes, Ascorbic Acid)
-                            strict_neg_params = ["GLU", "KET", "BLO", "PRO", "BIL", "NIT", "LEU", "ASC"]
-
-                            if any(x in param_name for x in strict_neg_params):
-                                if val_str in ["neg.", "negative", "0", "neg"]:
-                                    return "Normal"
-                                return "Positive/Abnormal"
-
-                            # กลุ่มที่ 2: Urobilinogen (ค่าปกติของ CYBOW 11M คือ 0.1 หรือ 1(16))
-                            elif "URO" in param_name:
-                                if "0.1" in val_str or "normal" in val_str or "1(16)" in val_str:
-                                    return "Normal"
-                                return "Positive/Abnormal"
-
-                            # กลุ่มที่ 3: pH (ค่าปกติทางคลินิก 5.0 - 8.0)
-                            elif "pH" in param_name:
-                                try:
-                                    import re
-                                    # สกัดเฉพาะตัวเลขออกมาจากข้อความ
-                                    num = float(re.findall(r'\d+\.?\d*', val_str)[0])
-                                    return "Normal" if 5.0 <= num <= 8.0 else "Abnormal"
-                                except:
-                                    return "Normal"
-
-                            # กลุ่มที่ 4: Specific Gravity (ค่าปกติทางคลินิก 1.005 - 1.030)
-                            elif "SG" in param_name:
-                                try:
-                                    import re
-                                    num = float(re.findall(r'\d+\.?\d*', val_str)[0])
-                                    # CYBOW 11M อ่านค่าได้ในช่วง 1.000 - 1.030
-                                    return "Normal" if 1.000 <= num <= 1.030 else "Abnormal"
-                                except:
-                                    return "Normal"
-
-                            return "Normal"
-
-                        # เตรียมข้อมูลส่งให้ PDF Generator
-                        table_data = [
-                            ["GLU (กลูโคส/น้ำตาล)", target_record['glucose'], "Negative", get_status("GLU", target_record['glucose'])],
-                            ["KET (คีโตน)", target_record['ketones'], "Negative", get_status("KET", target_record['ketones'])],
-                            ["SG (ความถ่วงจำเพาะ)", target_record['specific_gravity'], "1.005-1.030", get_status("SG", target_record['specific_gravity'])],
-                            ["BLO (เลือด)", target_record['blood'], "Negative", get_status("BLO", target_record['blood'])],
-                            ["pH (ความเป็นกรด-ด่าง)", target_record['ph'], "5.0-8.0", get_status("pH", target_record['ph'])],
-                            ["PRO (โปรตีน)", target_record['protein'], "Negative", get_status("PRO", target_record['protein'])],
-                            ["URO (ยูโรบิลิโนเจน)", target_record['urobilinogen'], "0.1-1.0 mg/dL", get_status("URO", target_record['urobilinogen'])],
-                            ["BIL (บิลิรูบิน)", target_record['bilirubin'], "Negative", get_status("BIL", target_record['bilirubin'])],
-                            ["NIT (ไนไตรต์)", target_record['nitrite'], "Negative", get_status("NIT", target_record['nitrite'])],
-                            ["LEU (เม็ดเลือดขาว)", target_record['leukocytes'], "Negative", get_status("LEU", target_record['leukocytes'])],
-                            ["ASC (วิตามินซี)", target_record['ascorbic_acid'], "Negative", get_status("ASC", target_record['ascorbic_acid'])]
-                        ]
-
-                        db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-                        try:
-                            db_bullets = json.loads(target_record.get('clinical_bullets', '[]'))
-                        except:
-                            db_bullets = []
-
-                        # เรียกใช้ฟังก์ชันสร้าง PDF
-                        pdf_bytes = create_pdf(
-                            patient_name=target_record['notes'],
-                            case_id=case_id,
-                            date_str=str(target_record['date']),
-                            table_data=table_data,
-                            summary_text=db_summary,
-                            bullet_points=db_bullets
+                    if pdf_bytes:
+                        st.download_button(
+                            label=f"⬇️ โหลด PDF: {target_record['notes']}",
+                            data=pdf_bytes,
+                            file_name=f"{case_id}_{target_record['notes'].replace(' ', '_')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            type="primary"
                         )
+                except Exception as e:
+                    st.error(f"❌ ระบบออกรายงานขัดข้อง: {e}")
 
-                        # แสดงปุ่มดาวน์โหลดที่กดได้ทันที
-                        if pdf_bytes:
-                            st.download_button(
-                                label=f"⬇️ โหลด PDF: {target_record['notes']}",
-                                data=pdf_bytes,
-                                file_name=f"{case_id}_{target_record['notes'].replace(' ', '_')}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True,
-                                type="primary"
-                            )
-                    except Exception as e:
-                        st.error(f"❌ ระบบออกรายงานขัดข้อง: {e}")
     else:
         # ========================================
         # 👤 Individual Patient Report
@@ -567,201 +302,90 @@ else:
         if patient_df.empty:
             st.warning("⚠️ ไม่พบข้อมูลผู้ป่วย")
         else:
-            # Header with patient info
             col_h1, col_h2 = st.columns([3, 1])
             with col_h1:
                 st.markdown(f"### 👤 รายงานผลตรวจ: **{patient_name}**")
                 latest_date = patient_df.iloc[0]['date']
                 st.caption(f"🕐 ตรวจล่าสุด: {latest_date} | 📊 มี {len(patient_df)} ครั้ง")
-            with col_h2:
-                if st.button("🔙 กลับไปรายการทั้งหมด", use_container_width=True):
-                    st.session_state['selected_patient_key'] = "📊 แสดงทั้งหมด"
-                    st.rerun()
 
-            # Latest Test Results in Cards
-            st.markdown("#### 🔬 ผลตรวจล่าสุด")
             latest = patient_df.iloc[0]
-
+            st.markdown("#### 🔬 ผลตรวจล่าสุด")
             col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-            with col_r1:
-                st.info(f"**🍬 Glucose**\n\n{latest['glucose']}")
-            with col_r2:
-                st.info(f"**🧪 Protein**\n\n{latest['protein']}")
-            with col_r3:
-                st.info(f"**🩸 Blood**\n\n{latest['blood']}")
-            with col_r4:
-                st.info(f"**⚗️ pH**\n\n{latest['ph']}")
+            with col_r1: st.info(f"**🍬 Glucose**\n\n{latest['glucose']}")
+            with col_r2: st.info(f"**🧪 Protein**\n\n{latest['protein']}")
+            with col_r3: st.info(f"**🩸 Blood**\n\n{latest['blood']}")
+            with col_r4: st.info(f"**⚗️ pH**\n\n{latest['ph']}")
 
-            # Clinical Summary (if available)
             if 'clinical_summary' in latest and latest['clinical_summary']:
                 st.markdown("#### 📝 สรุปผลการตรวจ")
                 st.success(latest['clinical_summary'])
-
-                # Clinical bullets
                 if 'clinical_bullets' in latest and latest['clinical_bullets']:
                     try:
                         bullets = json.loads(latest['clinical_bullets']) if isinstance(latest['clinical_bullets'], str) else latest['clinical_bullets']
                         if bullets:
                             st.markdown("**ข้อบ่งชี้ทางคลินิก:**")
-                            for bullet in bullets:
-                                st.markdown(f"• {bullet}")
-                    except:
-                        pass
-
+                            for bullet in bullets: st.markdown(f"• {bullet}")
+                    except: pass
             st.markdown("---")
-
-            # Full Data Table
-            st.markdown("#### 📊 ข้อมูลทั้งหมด")
-            display_cols = ['date', 'urobilinogen', 'glucose', 'bilirubin', 'ketones',
-                           'specific_gravity', 'blood', 'ph', 'protein', 'nitrite',
-                           'leukocytes', 'ascorbic_acid']
-
-            with st.container():
-                st.dataframe(
-                    patient_df[display_cols],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "date": st.column_config.DatetimeColumn("📅 วันที่", format="DD/MM/YYYY HH:mm")
-                    }
-                )
 
             # Download Buttons
             st.markdown("#### 📥 ดาวน์โหลดรายงาน")
             col_d1, col_d2 = st.columns(2)
-
             with col_d1:
+                display_cols = ['date', 'urobilinogen', 'glucose', 'bilirubin', 'ketones', 'specific_gravity', 'blood', 'ph', 'protein', 'nitrite', 'leukocytes', 'ascorbic_acid']
                 csv_data = patient_df[display_cols].to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📊 ดาวน์โหลด CSV",
-                    data=csv_data,
-                    file_name=f"Urine_Report_{patient_name.replace(' ', '_')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+                st.download_button(label="📊 ดาวน์โหลด CSV", data=csv_data, file_name=f"Urine_Report_{patient_name.replace(' ', '_')}.csv", mime="text/csv", use_container_width=True)
 
             with col_d2:
-                if st.button("📄 สร้างรายงาน PDF", use_container_width=True, type="primary"):
-                    with st.spinner("🔄 กำลังสร้าง PDF..."):
-                        try:
-                            # สร้าง Case ID
-                            date_obj = pd.to_datetime(latest['date'])
-                            case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-001"
+                try:
+                    date_obj = pd.to_datetime(latest['date'])
+                    case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-001"
+                    table_data = prepare_table_data(latest)
+                    
+                    db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
+                    try: db_bullets = json.loads(latest.get('clinical_bullets', '[]'))
+                    except: db_bullets = []
 
-                            def get_status(val):
-                                val_str = str(val).lower()
-                                if any(x in val_str for x in ['+', 'pos', 'trace', 'abnormal', '15-40', 'small', 'mod']):
-                                    return "Positive/Abnormal"
-                                return "Normal"
+                    pdf_bytes = create_pdf(
+                        patient_name=patient_name,
+                        case_id=case_id,
+                        date_str=str(latest['date']),
+                        table_data=table_data,
+                        summary_text=db_summary,
+                        bullet_points=db_bullets
+                    )
 
-                            # เตรียมข้อมูลส่งให้ PDF Generator (4 คอลัมน์)
-                            # แมปค่าทั้งหมดผ่านฟังก์ชันเดียว
-                            uro = get_cybow_mapping("URO", target_record['urobilinogen'])
-                            glu = get_cybow_mapping("GLU", target_record['glucose'])
-                            bil = get_cybow_mapping("BIL", target_record['bilirubin'])
-                            ket = get_cybow_mapping("KET", target_record['ketones'])
-                            sg  = get_cybow_mapping("SG", target_record['specific_gravity'])
-                            blo = get_cybow_mapping("BLO", target_record['blood'])
-                            ph  = get_cybow_mapping("pH", target_record['ph'])
-                            pro = get_cybow_mapping("PRO", target_record['protein'])
-                            nit = get_cybow_mapping("NIT", target_record['nitrite'])
-                            leu = get_cybow_mapping("LEU", target_record['leukocytes'])
-                            asc = get_cybow_mapping("ASC", target_record['ascorbic_acid'])
+                    if pdf_bytes:
+                        st.download_button(
+                            label="📄 ดาวน์โหลดรายงาน PDF",
+                            data=pdf_bytes,
+                            file_name=f"{case_id}_{patient_name.replace(' ', '_')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            type="primary"
+                        )
+                except Exception as e:
+                    st.error(f"❌ ระบบออกรายงานขัดข้อง: {e}")
 
-                            # เตรียม Array ส่งให้ PDF ตามโครงสร้างใหม่: [พารามิเตอร์, Result, Ref, Color, Status]
-                            table_data = [
-                                ["URO (ยูโรบิลิโนเจน)", uro['result'], uro['ref'], uro['color'], uro['status']],
-                                ["GLU (กลูโคส)", glu['result'], glu['ref'], glu['color'], glu['status']],
-                                ["BIL (บิลิรูบิน)", bil['result'], bil['ref'], bil['color'], bil['status']],
-                                ["KET (คีโตน)", ket['result'], ket['ref'], ket['color'], ket['status']],
-                                ["SG (ความถ่วงจำเพาะ)", sg['result'], sg['ref'], sg['color'], sg['status']],
-                                ["BLO (เลือด)", blo['result'], blo['ref'], blo['color'], blo['status']],
-                                ["pH (ความเป็นกรด-ด่าง)", ph['result'], ph['ref'], ph['color'], ph['status']],
-                                ["PRO (โปรตีน)", pro['result'], pro['ref'], pro['color'], pro['status']],
-                                ["NIT (ไนไตรต์)", nit['result'], nit['ref'], nit['color'], nit['status']],
-                                ["LEU (เม็ดเลือดขาว)", leu['result'], leu['ref'], leu['color'], leu['status']],
-                                ["ASC (วิตามินซี)", asc['result'], asc['ref'], asc['color'], asc['status']]
-                            ]
-
-                            try:
-                                db_bullets = json.loads(latest.get('clinical_bullets', '[]'))
-                            except:
-                                db_bullets = []
-
-                            db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-
-                            pdf_bytes = create_pdf(
-                                patient_name=patient_name,
-                                case_id=case_id,
-                                date_str=str(latest['date']),
-                                table_data=table_data,
-                                summary_text=db_summary,
-                                bullet_points=db_bullets
-                            )
-
-                            # ✅ เช็คก่อนว่ามีข้อมูลถูกส่งกลับมาจริงๆ ค่อยเรนเดอร์ปุ่ม
-                            if pdf_bytes:
-                                st.download_button(
-                                    label="⬇️ คลิกดาวน์โหลด PDF",
-                                    data=pdf_bytes,
-                                    file_name=f"LHome_Report_{patient_name.replace(' ', '_')}.pdf",
-                                    mime="application/pdf",
-                                    use_container_width=True
-                                )
-                            else:
-                                st.error("⚠️ ไม่พบข้อมูลไฟล์ PDF")
-
-                        except Exception as e:
-                            # 🌟 หากเกิด Error ระหว่างสร้าง PDF ให้แสดงจุดที่พังออกมาบนหน้าจอ
-                            st.error(f"❌ เกิดข้อผิดพลาดในการสร้างไฟล์ PDF: {e}")
-
-
-            # Health Trends
             st.markdown("---")
             st.markdown("#### 📈 กราฟแนวโน้มสุขภาพ")
-
             tab1, tab2, tab3 = st.tabs(["⚗️ pH", "💧 Specific Gravity", "🧪 Custom"])
-
             with tab1:
                 fig_ph = create_trend_chart(df, patient_name, 'ph', 'ค่า pH')
-                if fig_ph:
-                    st.plotly_chart(fig_ph, use_container_width=True)
-                else:
-                    st.info("ไม่มีข้อมูลกราฟ pH")
-
+                if fig_ph: st.plotly_chart(fig_ph, use_container_width=True)
             with tab2:
                 fig_sg = create_trend_chart(df, patient_name, 'specific_gravity', 'Specific Gravity')
-                if fig_sg:
-                    st.plotly_chart(fig_sg, use_container_width=True)
-                else:
-                    st.info("ไม่มีข้อมูลกราฟ Specific Gravity")
-
+                if fig_sg: st.plotly_chart(fig_sg, use_container_width=True)
             with tab3:
-                param_options = {
-                    'pH': 'ph',
-                    'Specific Gravity': 'specific_gravity',
-                    'Glucose': 'glucose',
-                    'Protein': 'protein',
-                    'Blood': 'blood'
-                }
+                param_options = {'pH': 'ph', 'Specific Gravity': 'specific_gravity', 'Glucose': 'glucose', 'Protein': 'protein', 'Blood': 'blood'}
                 selected_param = st.selectbox("เลือกพารามิเตอร์:", list(param_options.keys()))
-
                 if selected_param:
                     fig_custom = create_trend_chart(df, patient_name, param_options[selected_param], selected_param)
-                    if fig_custom:
-                        st.plotly_chart(fig_custom, use_container_width=True)
-                    else:
-                        st.info(f"ไม่มีข้อมูลกราฟ {selected_param}")
+                    if fig_custom: st.plotly_chart(fig_custom, use_container_width=True)
 
 # ========================================
 # 📌 Footer
 # ========================================
 st.sidebar.markdown("---")
-st.sidebar.markdown("""
-### ℹ️ ข้อมูลระบบ
-- 🏥 **LHome Medical**
-- 🤖 **AI-Powered Analysis**
-- 📊 **Real-time Dashboard**
-- 🔒 **Secure & Private**
-""")
+st.sidebar.markdown("### ℹ️ ข้อมูลระบบ\n- 🏥 **LHome Medical**\n- 🤖 **AI-Powered Analysis**\n- 📊 **Real-time Dashboard**\n- 🔒 **Secure & Private**")
 st.sidebar.caption("© 2024 LHome Medical System")
