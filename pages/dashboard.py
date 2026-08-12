@@ -656,17 +656,17 @@ else:
 
                             # เตรียมข้อมูลส่งให้ PDF Generator (4 คอลัมน์)
                             # แมปค่าทั้งหมดผ่านฟังก์ชันเดียว
-                            uro = get_cybow_mapping("URO", latest['urobilinogen'])
-                            glu = get_cybow_mapping("GLU", latest['glucose'])
-                            bil = get_cybow_mapping("BIL", latest['bilirubin'])
-                            ket = get_cybow_mapping("KET", latest['ketones'])
-                            sg  = get_cybow_mapping("SG", latest['specific_gravity'])
-                            blo = get_cybow_mapping("BLO", latest['blood'])
-                            ph  = get_cybow_mapping("pH", latest['ph'])
-                            pro = get_cybow_mapping("PRO", latest['protein'])
-                            nit = get_cybow_mapping("NIT", latest['nitrite'])
-                            leu = get_cybow_mapping("LEU", latest['leukocytes'])
-                            asc = get_cybow_mapping("ASC", latest['ascorbic_acid'])
+                            uro = get_cybow_mapping("URO", target_record['urobilinogen'])
+                            glu = get_cybow_mapping("GLU", target_record['glucose'])
+                            bil = get_cybow_mapping("BIL", target_record['bilirubin'])
+                            ket = get_cybow_mapping("KET", target_record['ketones'])
+                            sg  = get_cybow_mapping("SG", target_record['specific_gravity'])
+                            blo = get_cybow_mapping("BLO", target_record['blood'])
+                            ph  = get_cybow_mapping("pH", target_record['ph'])
+                            pro = get_cybow_mapping("PRO", target_record['protein'])
+                            nit = get_cybow_mapping("NIT", target_record['nitrite'])
+                            leu = get_cybow_mapping("LEU", target_record['leukocytes'])
+                            asc = get_cybow_mapping("ASC", target_record['ascorbic_acid'])
 
                             # เตรียม Array ส่งให้ PDF ตามโครงสร้างใหม่: [พารามิเตอร์, Result, Ref, Color, Status]
                             table_data = [
