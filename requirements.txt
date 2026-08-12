@@ -22,4 +22,5 @@ Pillow>=10.0.0
 requests>=2.31.0
 
 # PDF Generation
-fpdf2[text_shaping]>=2.8.8
+fpdf2>=2.8.8
+uharfbuzz>=0.39.0
