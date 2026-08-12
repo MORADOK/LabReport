@@ -1,25 +1,12 @@
 import pandas as pd
 import psycopg2
 import os
-import socket
 import plotly.express as px
-from urllib.parse import urlparse
 from dotenv import load_dotenv
 from src.db_handler import get_connection
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
-
-# บังคับให้ใช้ IPv4 เท่านั้น (แก้ปัญหา IPv6 network unreachable)
-def force_ipv4_dns(hostname):
-    """Force DNS resolution to IPv4 only"""
-    try:
-        result = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
-        if result:
-            return result[0][4][0]
-    except Exception as e:
-        print(f"[DNS] IPv4 resolution failed for {hostname}: {e}")
-    return hostname
 
 def load_data():
     """Load data with optimized query - only fetch necessary columns"""

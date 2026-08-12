@@ -28,7 +28,7 @@ venv/
 env/
 ENV/
 
-# Database
+# Database (local SQLite backups)
 *.db
 *.sqlite
 *.sqlite3
@@ -54,3 +54,8 @@ tmp/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Old/backup files
+*_old.*
+*_backup.*
+*.bak

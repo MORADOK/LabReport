@@ -24,6 +24,17 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# ตั้งค่า Logging Configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bot.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -139,7 +150,7 @@ def resize_image_to_base64(image_path: str, max_dimension: int = 1536) -> str:
             img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
             return img_str
     except Exception as e:
-        logging.error(f"Image resize error: {e}")
+        logger.error(f"Image resize error: {e}")
         return None
         
 # ---------------------------------------------------------
@@ -303,6 +314,8 @@ def process_image_with_ai(image_id, user_id, patient_name):
         """
 
         # 🌟 4. เรียก OpenRouter API (Claude Sonnet 4.5 - ความแม่นยำสูงสุดในการวิเคราะห์ภาพทางการแพทย์)
+        # Model ID: anthropic/claude-sonnet-4.5 (Released: Sep 29, 2025, Context: 1M tokens)
+        # หมายเหตุ: มี claude-sonnet-4.6 ออกใหม่แล้ว แต่ 4.5 stable และเหมาะกับงาน medical vision
         response = client.chat.completions.create(
             model="anthropic/claude-sonnet-4.5",  # Claude Sonnet 4.5 - Medical-grade vision analysis
             messages=[
@@ -372,7 +385,7 @@ def process_image_with_ai(image_id, user_id, patient_name):
 
     except Exception as e:
         error_msg = str(e)
-        logging.error(f"Error processing image: {error_msg}")
+        logger.error(f"Error processing image: {error_msg}")
         
         line_bot_api.push_message(
             user_id,

@@ -12,7 +12,7 @@ if sys.platform == 'win32':
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 sys.path.append(os.path.dirname(__file__))
-from src import database, analysis
+from src import db_handler, analysis
 
 def test_database():
     print("=" * 50)
@@ -23,7 +23,7 @@ def test_database():
     print("\n[Test 1] Inserting test record...")
     try:
         test_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        success = database.insert_record(
+        success = db_handler.insert_record(
             date=test_date,
             urobilinogen="normal",
             glucose="neg",
@@ -60,22 +60,24 @@ def test_database():
         print(f"❌ Error loading data: {e}")
         return False
 
-    # Test 3: Check database schema
+    # Test 3: Check database schema (PostgreSQL)
     print("\n[Test 3] Checking database schema...")
     try:
-        import sqlite3
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        DB_PATH = os.path.join(BASE_DIR, "data", "urine_records.db")
-
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_handler.get_connection()
         cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(records)")
+        cursor.execute("""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name='records'
+            ORDER BY ordinal_position
+        """)
         columns = cursor.fetchall()
 
         print("Database columns:")
         for col in columns:
-            print(f"  - {col[1]} ({col[2]})")
+            print(f"  - {col[0]} ({col[1]})")
 
+        cursor.close()
         conn.close()
         print("✅ Schema check complete")
     except Exception as e:
