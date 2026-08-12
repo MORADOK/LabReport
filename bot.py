@@ -287,24 +287,23 @@ def process_image_with_ai(image_id, user_id, patient_name):
         **สำคัญ**: ค่าที่ตอบต้องเลือกจาก 'value' ใน REFERENCE ด้านบนเท่านั้น ห้ามแต่งเอง!
         """
 
-        # 🌟 4. เรียก OpenRouter API (ใช้โมเดลที่รองรับ Vision)
+        # 🌟 4. เรียก OpenRouter API (Claude Sonnet 4.5 - ความแม่นยำสูงสุดในการวิเคราะห์ภาพทางการแพทย์)
         response = client.chat.completions.create(
-            # ใช้ gpt-4o-mini เพื่อความรวดเร็วและประหยัด หรือเปลี่ยนเป็น openai/gpt-4o สำหรับความแม่นยำสูงสุด
-            model="openai/gpt-4o",
+            model="anthropic/claude-sonnet-4-20250514",  # Claude Sonnet 4.5 - Medical-grade vision analysis
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "อ่านค่าผลตรวจจากรูปแผ่นตรวจปัสสาวะนี้อย่างเป็นระบบและแม่นยำ วิเคราะห์สีแต่ละแถบอย่างละเอียด"},
+                        {"type": "text", "text": "อ่านค่าผลตรวจจากรูปแผ่นตรวจปัสสาวะนี้อย่างเป็นระบบและแม่นยำ วิเคราะห์สีแต่ละแถบอย่างละเอียด\n\n**สำคัญ**: ตอบกลับเป็น valid JSON เท่านั้น ไม่ต้องมี markdown code blocks"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
             ],
-            max_tokens=1500, # ขยาย Token เพื่อรองรับการพิมพ์คำอธิบายทางคลินิกแบบละเอียด
-            temperature=0, # 🔥 CRITICAL: ตั้งค่า temperature=0 เพื่อให้ผลลัพธ์เป็น deterministic (ภาพเดียวกันได้ผลเดียวกันเสมอ)
-            seed=42, # 🔥 เพิ่ม seed เพื่อความสม่ำเสมอ (consistency) ในการวิเคราะห์
-            response_format={"type": "json_object"}
+            max_tokens=2000,  # เพิ่ม token สำหรับ Claude ที่ตอบยาวกว่า
+            temperature=0,    # 🔥 CRITICAL: deterministic output
+            # หมายเหตุ: Claude API ไม่รองรับ response_format และ seed parameters ผ่าน OpenRouter
+            # แต่ temperature=0 ช่วยให้ผลลัพธ์สม่ำเสมอมากขึ้น
         )
 
         result_text = response.choices[0].message.content

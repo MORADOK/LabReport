@@ -4,10 +4,12 @@
 
 ## 🎯 ฟีเจอร์หลัก
 
-### 📸 AI Vision Analysis
-- วิเคราะห์แผ่นตรวจปัสสาวะ CYBOW 11M ด้วย AI (GPT-4o)
-- อ่านค่า 11 พารามิเตอร์ได้แม่นยำ
-- สรุปผลทางคลินิกอัตโนมัติพร้อมข้อบ่งชี้
+### 📸 AI Vision Analysis (Medical-Grade)
+- วิเคราะห์แผ่นตรวจปัสสาวะ CYBOW 11M ด้วย AI (Claude Sonnet 4.5)
+- อ่านค่า 11 พารามิเตอร์ได้แม่นยำด้วยการเทียบสี RGB แบบละเอียด
+- ใช้ Euclidean Distance สำหรับ color matching precision
+- ระบบ deterministic (ภาพเดียวกันได้ผลเดียวกันเสมอ)
+- สรุปผลทางคลินิกอัตโนมัติพร้อมข้อบ่งชี้แบบละเอียด
 
 ### 💬 LINE Bot Integration
 - รับรูปแผ่นตรวจผ่าน LINE Official Account
@@ -46,7 +48,8 @@
 - **Backend:** FastAPI, Python 3.10+
 - **Frontend:** Streamlit
 - **Database:** PostgreSQL (Supabase)
-- **AI Model:** GPT-4o (via OpenRouter)
+- **AI Model:** Claude Sonnet 4.5 (via OpenRouter) - Medical-grade vision analysis
+- **Color Analysis:** Euclidean Distance with 50+ RGB reference points
 - **LINE Bot SDK:** line-bot-sdk
 - **Data Processing:** pandas, plotly
 - **PDF Generation:** fpdf2 with THSarabun fonts
@@ -96,7 +99,7 @@ DATABASE_URL=postgresql://user:password@host:port/database
 LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
 LINE_CHANNEL_SECRET=your_line_channel_secret
 
-# OpenRouter API (สำหรับ GPT-4o Vision)
+# OpenRouter API (สำหรับ Claude Sonnet 4.5 Vision)
 OPENROUTER_API_KEY=your_openrouter_api_key
 ```
 
@@ -272,15 +275,21 @@ python -c "from src import database; database.init_db()"
 
 ## 🔄 การปรับปรุงที่ทำไปแล้ว (Latest Updates)
 
-✅ อัพเกรด AI Model เป็น GPT-4o (ความแม่นยำสูงสุด)
-✅ เพิ่มระบบสรุปผลทางคลินิกอัตโนมัติ
-✅ ปรับปรุง PDF Generator ให้สวยงามและมาตรฐาน
-✅ เพิ่ม Error Handling แบบละเอียด
-✅ ปรับ Requirements.txt ให้มี Version Pinning
-✅ Migration จาก SQLite → PostgreSQL (Supabase)
-✅ เพิ่ม Row Level Security (RLS)
-✅ ปรับปรุง Dashboard UI ให้ทันสมัย
-✅ เพิ่ม Quick Download PDF จากตาราง
+### 🌟 Major Update: Medical-Grade AI Analysis
+✅ **อัพเกรด AI Model เป็น Claude Sonnet 4.5** (ความแม่นยำสูงสุดสำหรับการวิเคราะห์ภาพทางการแพทย์)
+✅ **RGB Color Standards** - เพิ่มค่ามาตรฐานสี RGB แบบละเอียด 50+ จุดอ้างอิง
+✅ **Euclidean Distance Algorithm** - ใช้สูตรทางคณิตศาสตร์ในการเทียบสี
+✅ **Deterministic Analysis** - ตั้งค่า temperature=0 เพื่อให้ได้ผลลัพธ์สม่ำเสมอ
+✅ **Enhanced System Prompt** - คำสั่ง AI แบบละเอียด พร้อมตัวอย่างและมาตรฐาน
+
+### 🏥 System Improvements
+✅ เพิ่มระบบสรุปผลทางคลินิกอัตโนมัติแบบละเอียด (clinical_bullets)
+✅ ปรับปรุง PDF Generator ให้สวยงามและมาตรฐาน (ใช้ฟอนต์ THSarabun)
+✅ เพิ่ม Error Handling แบบละเอียด พร้อม retry logic
+✅ ปรับ Requirements.txt ให้มี Version Pinning เพื่อความเสถียร
+✅ Migration จาก SQLite → PostgreSQL (Supabase) พร้อม RLS
+✅ ปรับปรุง Dashboard UI ให้ทันสมัย (Modern Medical Theme)
+✅ เพิ่ม Quick Download PDF จากตาราง (Single-click download)
 
 ## 📈 แผนพัฒนาในอนาคต
 
