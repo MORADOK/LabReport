@@ -276,14 +276,24 @@ else:
                     case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
                     table_data = prepare_table_data(target_record)
                     
-                    # 🌟 Robust JSON parsing with ast.literal_eval
+                    # 🌟 Robust JSON parsing with Unicode escape handling
                     db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
                     try:
                         raw_bullets = target_record.get('clinical_bullets', '[]')
+
+                        # ดักจับและแปลง Unicode escape sequences กลับเป็นภาษาไทย
                         if isinstance(raw_bullets, str):
+                            # ตรวจสอบว่ามี Unicode escape หรือไม่
+                            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
+                                try:
+                                    # แปลง Unicode escape กลับเป็นข้อความจริง
+                                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
+                                except:
+                                    pass  # ถ้าแปลงไม่ได้ ใช้ค่าเดิม
                             db_bullets = ast.literal_eval(raw_bullets)
                         else:
                             db_bullets = raw_bullets
+
                         if not isinstance(db_bullets, list):
                             db_bullets = [str(db_bullets)]
                     except Exception as e:
@@ -340,7 +350,16 @@ else:
                 if 'clinical_bullets' in latest and latest['clinical_bullets']:
                     try:
                         raw_bullets = latest['clinical_bullets']
+
+                        # ดักจับและแปลง Unicode escape sequences กลับเป็นภาษาไทย
                         if isinstance(raw_bullets, str):
+                            # ตรวจสอบว่ามี Unicode escape หรือไม่
+                            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
+                                try:
+                                    # แปลง Unicode escape กลับเป็นข้อความจริง
+                                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
+                                except:
+                                    pass  # ถ้าแปลงไม่ได้ ใช้ค่าเดิม
                             bullets = ast.literal_eval(raw_bullets)
                         else:
                             bullets = raw_bullets
@@ -364,11 +383,20 @@ else:
                     case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-001"
                     table_data = prepare_table_data(latest)
                     
-                    # 🌟 Robust JSON parsing with ast.literal_eval
+                    # 🌟 Robust JSON parsing with Unicode escape handling
                     db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
                     try:
                         raw_bullets = latest.get('clinical_bullets', '[]')
+
+                        # ดักจับและแปลง Unicode escape sequences กลับเป็นภาษาไทย
                         if isinstance(raw_bullets, str):
+                            # ตรวจสอบว่ามี Unicode escape หรือไม่
+                            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
+                                try:
+                                    # แปลง Unicode escape กลับเป็นข้อความจริง
+                                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
+                                except:
+                                    pass  # ถ้าแปลงไม่ได้ ใช้ค่าเดิม
                             db_bullets = ast.literal_eval(raw_bullets)
                         else:
                             db_bullets = raw_bullets

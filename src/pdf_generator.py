@@ -42,6 +42,13 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
     pdf.add_font("THSarabun", "", font_path)
     pdf.add_font("THSarabun", "B", font_bold_path)
     pdf.add_page()
+
+    # 🌟 เปิดใช้งาน Text Shaping เพื่อจัดการวรรณยุกต์ภาษาไทยให้ดีขึ้น
+    # (ต้องลง fpdf2[text_shaping] สำเร็จก่อน)
+    try:
+        pdf.set_text_shaping(True)
+    except AttributeError:
+        pass  # fpdf2 เวอร์ชันนี้อาจไม่รองรับ set_text_shaping
     
     # ==========================================
     # 1. ข้อมูลผู้ป่วย

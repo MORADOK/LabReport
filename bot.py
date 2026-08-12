@@ -387,7 +387,8 @@ def process_image_with_ai(image_id, user_id, patient_name):
             ascorbic_acid=data.get('ascorbic_acid', 'N/A'),
             notes=patient_name,
             clinical_summary=data.get('clinical_summary', 'ไม่สามารถสรุปผลได้แน่ชัด'),
-            clinical_bullets=json.dumps(data.get('clinical_bullets', []))
+            # 🌟 ensure_ascii=False เพื่อบันทึกภาษาไทยแท้ (ไม่ใช่ \u0e...)
+            clinical_bullets=json.dumps(data.get('clinical_bullets', []), ensure_ascii=False)
         )
 
         if success:
