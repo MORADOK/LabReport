@@ -140,13 +140,14 @@ def process_image_with_ai(image_id, user_id, patient_name):
         if not base64_image:
             raise ValueError("ไม่สามารถประมวลผลไฟล์ภาพได้")
 
-        # 🌟 3. อัปเกรด System Prompt (ปรับให้วิเคราะห์เชิงลึกแบบ Medical Grade)
+        # 🌟 3. อัปเกรด System Prompt (ปรับให้วิเคราะห์เชิงลึกแบบ Medical Grade + Deterministic)
         system_prompt = f"""
         คุณคือผู้เชี่ยวชาญด้านเทคนิคการแพทย์และการวิเคราะห์แผ่นตรวจปัสสาวะ CYBOW 11M
-        
+
         กฎเหล็ก (CRITICAL RULES):
-        1. คุณ "ต้อง" พยายามประเมินและเลือกค่าที่ใกล้เคียงกับสีในภาพมากที่สุด ห้ามตอบ N/A เด็ดขาด
-        2. เลือกค่าจากรายการมาตรฐานเหล่านี้ให้ตรงเป๊ะทุกตัวอักษร:
+        1. คุณ "ต้อง" วิเคราะห์สีแต่ละแถบอย่างเป็นระบบและเลือกค่าที่ตรงกับสีในภาพมากที่สุด ห้ามตอบ N/A เด็ดขาด
+        2. ใช้หลักการวิเคราะห์แบบ DETERMINISTIC - ภาพเดียวกันต้องให้ผลเดียวกันเสมอ
+        3. เลือกค่าจากรายการมาตรฐานเหล่านี้ให้ตรงเป๊ะทุกตัวอักษร:
            - urobilinogen: {CYBOW_11M_STANDARDS['urobilinogen']}
            - glucose: {CYBOW_11M_STANDARDS['glucose']}
            - bilirubin: {CYBOW_11M_STANDARDS['bilirubin']}
@@ -158,8 +159,13 @@ def process_image_with_ai(image_id, user_id, patient_name):
            - nitrite: {CYBOW_11M_STANDARDS['nitrite']}
            - leukocytes: {CYBOW_11M_STANDARDS['leukocytes']}
            - ascorbic_acid: {CYBOW_11M_STANDARDS['ascorbic_acid']}
-           
-        3. การวิเคราะห์ทางคลินิก (สำคัญมาก):
+
+        4. วิธีการวิเคราะห์ที่ถูกต้อง:
+           - อ่านสีแต่ละแถบจากซ้ายไปขวาตามลำดับ URO > GLU > BIL > KET > SG > BLO > pH > PRO > NIT > LEU > ASC
+           - เปรียบเทียบสีกับแผ่นมาตรฐานที่ติดบนกล่อง CYBOW 11M
+           - เลือกค่าที่ใกล้เคียงที่สุด ห้ามเดา ห้ามประมาณการแบบสุ่ม
+
+        5. การวิเคราะห์ทางคลินิก (สำคัญมาก):
            - 'clinical_summary': สรุปผล 1-2 ประโยคให้ชัดเจน เช่น "พบความผิดปกติที่ชัดเจน: ตรวจพบ..."
            - 'clinical_bullets': ให้เขียนเป็น Array ของข้อความ อธิบายเชื่อมโยงพารามิเตอร์ที่พบเข้าด้วยกัน 
              **ต้องใช้รูปแบบ "หัวข้อ: รายละเอียด" เสมอ**
@@ -181,18 +187,20 @@ def process_image_with_ai(image_id, user_id, patient_name):
         # 🌟 4. เรียก OpenRouter API (ใช้โมเดลที่รองรับ Vision)
         response = client.chat.completions.create(
             # ใช้ gpt-4o-mini เพื่อความรวดเร็วและประหยัด หรือเปลี่ยนเป็น openai/gpt-4o สำหรับความแม่นยำสูงสุด
-            model="openai/gpt-4o", 
+            model="openai/gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "อ่านค่าผลตรวจจากรูปแผ่นตรวจปัสสาวะนี้ให้หน่อย"},
+                        {"type": "text", "text": "อ่านค่าผลตรวจจากรูปแผ่นตรวจปัสสาวะนี้อย่างเป็นระบบและแม่นยำ วิเคราะห์สีแต่ละแถบอย่างละเอียด"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
             ],
             max_tokens=1500, # ขยาย Token เพื่อรองรับการพิมพ์คำอธิบายทางคลินิกแบบละเอียด
+            temperature=0, # 🔥 CRITICAL: ตั้งค่า temperature=0 เพื่อให้ผลลัพธ์เป็น deterministic (ภาพเดียวกันได้ผลเดียวกันเสมอ)
+            seed=42, # 🔥 เพิ่ม seed เพื่อความสม่ำเสมอ (consistency) ในการวิเคราะห์
             response_format={"type": "json_object"}
         )
 
