@@ -254,10 +254,25 @@ def process_image_with_ai(image_id, user_id, patient_name):
            - ใช้หลักการ Euclidean Distance: sqrt((R1-R2)² + (G1-G2)² + (B1-B2)²)
            - เลือกค่าที่มี distance น้อยที่สุด (สีใกล้เคียงที่สุด)
 
-        3. SYSTEMATIC READING (อ่านแบบเป็นระบบ):
-           - อ่านแถบสีจากซ้ายไปขวา: URO → GLU → BIL → KET → SG → BLO → pH → PRO → NIT → LEU → ASC
+        3. SPATIAL GROUNDING - การอ้างอิงตำแหน่ง (สำคัญมาก!):
+           แผ่นตรวจมี 11 แถบสีเรียงจาก "ซ้ายไปขวา" ตามลำดับนี้:
+           - แถบที่ 1 (ซ้ายสุด): URO (ยูโรบิลิโนเจน)
+           - แถบที่ 2: GLU (กลูโคส)
+           - แถบที่ 3: BIL (บิลิรูบิน)
+           - แถบที่ 4: KET (คีโตน)
+           - แถบที่ 5: SG (ความถ่วงจำเพาะ)
+           - แถบที่ 6: BLO (เลือด) -> **ถ้าเป็นสีเขียว/เขียวเข้ม = ผิดปกติ!**
+           - แถบที่ 7: pH (ความเป็นกรด-ด่าง)
+           - แถบที่ 8: PRO (โปรตีน) -> **ถ้าเป็นสีเขียว = ผิดปกติ!**
+           - แถบที่ 9: NIT (ไนไตรต์) -> **ถ้าเป็นสีชมพู/บานเย็น = ผิดปกติ!**
+           - แถบที่ 10: LEU (เม็ดเลือดขาว) -> **ถ้าเป็นสีม่วง = ผิดปกติ!**
+           - แถบที่ 11 (ขวาสุด): ASC (กรดแอสคอร์บิก)
+
+        4. SYSTEMATIC READING (อ่านแบบเป็นระบบ):
+           - ต้องอ่านทีละแถบจากซ้ายไปขวาตามลำดับที่กำหนด
            - แต่ละแถบต้องเลือกค่าจาก reference ด้านล่างเท่านั้น
            - ห้ามตอบ N/A ถ้าเห็นแถบสี ต้องเลือกค่าที่ใกล้เคียงที่สุด
+           - ต้องสร้าง "reasoning" field ก่อนเพื่อบันทึกสีที่เห็นทีละแถบ
 
         ═══════════════════════════════════════════════════════════════════
         📊 CYBOW 11M COLOR REFERENCE STANDARDS (ค่ามาตรฐานอ้างอิง):
@@ -299,18 +314,21 @@ def process_image_with_ai(image_id, user_id, patient_name):
         📋 OUTPUT FORMAT (รูปแบบการตอบกลับ):
         ═══════════════════════════════════════════════════════════════════
 
+        🌟 **IMPORTANT:** ต้องสร้าง "reasoning" field ก่อนเสมอ เพื่อบังคับให้คิดทีละขั้นตอน
+
         ตอบกลับเป็น JSON เท่านั้น ตามโครงสร้างนี้:
         {{
+            "reasoning": "แถบ1(URO) สีครีม/พีช... แถบ6(BLO) สีเขียวเข้ม! แถบ8(PRO) สีเขียว! แถบ9(NIT) สีชมพู! แถบ10(LEU) สีม่วง!...",
             "urobilinogen": "เลือกจาก value ใน reference",
             "glucose": "เลือกจาก value ใน reference",
             "bilirubin": "เลือกจาก value ใน reference",
             "ketones": "เลือกจาก value ใน reference",
             "specific_gravity": "เลือกจาก value ใน reference",
-            "blood": "เลือกจาก value ใน reference",
+            "blood": "เลือกจาก value ใน reference (เช่น Hemolysis +++250 ถ้าเห็นสีเขียวเข้ม)",
             "ph": "เลือกจาก value ใน reference",
-            "protein": "เลือกจาก value ใน reference",
-            "nitrite": "เลือกจาก value ใน reference",
-            "leukocytes": "เลือกจาก value ใน reference",
+            "protein": "เลือกจาก value ใน reference (เช่น +++300 ถ้าเห็นสีเขียวเข้ม)",
+            "nitrite": "เลือกจาก value ใน reference (เช่น pos. ถ้าเห็นสีชมพู)",
+            "leukocytes": "เลือกจาก value ใน reference (เช่น +++500 ถ้าเห็นสีม่วง)",
             "ascorbic_acid": "เลือกจาก value ใน reference",
             "clinical_summary": "สรุปผลตามค่าที่อ่านได้จริง (ไม่ใช่สมมติว่าปกติ)",
             "clinical_bullets": ["วิเคราะห์ตามข้อมูลจริงที่เห็น"]
