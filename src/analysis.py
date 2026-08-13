@@ -44,59 +44,90 @@ def sanitize_thai_text(text):
 
 def parse_clinical_bullets(raw_bullets, sanitize=True):
     """
-    🌟 Robust JSON/List parsing with Unicode escape handling
+    🌟 Bullet-proof JSON/List parser with 4-tier fallback system
 
     Safely converts clinical_bullets from database (which might be JSON string,
     Unicode-escaped string, or already a list) into a proper Python list.
+
+    Fallback tiers:
+    - Plan A: json.loads() - Standard JSON parsing
+    - Plan B: ast.literal_eval() - Python literal parsing
+    - Plan C: Regex extraction - Extract quoted strings
+    - Plan D: Ultimate fallback - Return cleaned raw text
 
     Args:
         raw_bullets: Raw data from database (str, list, or any type)
         sanitize: If True, apply text sanitization to remove corrupted characters
 
     Returns:
-        list: Parsed clinical bullets, or error message list if parsing fails
+        list: Parsed clinical bullets, always returns a list (never fails)
     """
     try:
-        # 1. Handle if already a list
+        # 0. Handle if already a list
         if isinstance(raw_bullets, list):
+            if sanitize:
+                return [sanitize_thai_text(str(b)) for b in raw_bullets]
             return raw_bullets
 
-        # 2. Handle string inputs
-        if isinstance(raw_bullets, str):
-            # 2.1 Clean up Unicode escape sequences (e.g., \u0e34 -> Thai characters)
-            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
-                try:
-                    # Decode Unicode escapes back to actual Thai text
-                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
-                except Exception:
-                    pass  # If decoding fails, continue with original string
+        # 1. Convert to string and clean artifacts + newlines
+        if not isinstance(raw_bullets, str):
+            raw_bullets = str(raw_bullets)
 
-            # 2.2 Try JSON parsing first (safer for most cases)
+        # Clean up artifacts and problematic newlines that break JSON
+        cleaned_data = raw_bullets.replace('\n', ' ').strip()
+
+        # 2. Decode Unicode escape sequences if present
+        if r'\u0e' in cleaned_data or '\\u0e' in cleaned_data:
             try:
-                db_bullets = json.loads(raw_bullets)
-            except json.JSONDecodeError:
-                # 2.3 Fallback to ast.literal_eval for Python-style strings
-                try:
-                    db_bullets = ast.literal_eval(raw_bullets)
-                except (ValueError, SyntaxError):
-                    # If both fail, treat the entire string as a single bullet point
-                    db_bullets = [raw_bullets]
-        else:
-            # 3. For any other type, convert to string and wrap in list
-            db_bullets = [str(raw_bullets)]
+                cleaned_data = cleaned_data.encode('utf-8').decode('unicode_escape')
+            except Exception:
+                pass  # Continue with original if decoding fails
 
-        # 4. Ensure result is always a list
-        if not isinstance(db_bullets, list):
-            db_bullets = [str(db_bullets)]
+        # PLAN A: Try JSON parsing first (most reliable for standard JSON)
+        try:
+            db_bullets = json.loads(cleaned_data)
+            if isinstance(db_bullets, list):
+                # Success! Sanitize if requested
+                if sanitize:
+                    return [sanitize_thai_text(str(b)) for b in db_bullets]
+                return [str(b) for b in db_bullets]
+        except (json.JSONDecodeError, ValueError):
+            pass  # Move to Plan B
 
-        # 5. Sanitize Thai text if requested
-        if sanitize:
-            db_bullets = [sanitize_thai_text(bullet) for bullet in db_bullets]
+        # PLAN B: Try ast.literal_eval (handles Python list repr)
+        try:
+            db_bullets = ast.literal_eval(cleaned_data)
+            if isinstance(db_bullets, list):
+                if sanitize:
+                    return [sanitize_thai_text(str(b)) for b in db_bullets]
+                return [str(b) for b in db_bullets]
+        except (ValueError, SyntaxError):
+            pass  # Move to Plan C
 
-        return db_bullets
+        # PLAN C: Regex extraction - Extract all quoted strings "..."
+        # This works even if JSON structure is malformed
+        extracted = re.findall(r'"([^"]*)"', cleaned_data)
+        if extracted:
+            # Filter out very short strings (likely not real content)
+            valid_bullets = [str(b) for b in extracted if len(str(b)) > 5]
+            if valid_bullets:
+                if sanitize:
+                    return [sanitize_thai_text(b) for b in valid_bullets]
+                return valid_bullets
+
+        # PLAN D: Ultimate fallback - Clean and return as single-item list
+        # Remove brackets and quotes, sanitize if requested
+        fallback_text = cleaned_data.replace('[', '').replace(']', '').replace('"', '').strip()
+        if fallback_text:
+            if sanitize:
+                return [sanitize_thai_text(fallback_text)]
+            return [fallback_text]
+
+        # If everything is empty, return empty list
+        return []
 
     except Exception as e:
-        # Final fallback: return error message
+        # Absolute final fallback: return error message
         return ["ไม่สามารถโหลดข้อบ่งชี้ทางคลินิกได้ (Data Format Error)"]
 
 def load_data():
