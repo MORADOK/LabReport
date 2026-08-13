@@ -3,6 +3,7 @@ import psycopg2
 import os
 import json
 import ast
+import re
 import plotly.express as px
 from dotenv import load_dotenv
 from src.db_handler import get_connection
@@ -12,10 +13,16 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 def sanitize_thai_text(text):
     """
-    🧹 Remove corrupted characters from Thai text
+    🧹 Remove corrupted characters from Thai text (Regex-based smart cleaning)
 
-    Fixes common issues where characters like 'b', 'f', 'fb' are incorrectly
-    inserted into Thai words (e.g., "ทำbงาน" -> "ทำงาน").
+    Removes lowercase English letters (a-z) that are incorrectly inserted between
+    Thai characters, while preserving valid medical terms like "Glucose (GLU)".
+
+    Examples:
+        "น้ำgcตาล" -> "น้ำตาล"
+        "ทำcงาน" -> "ทำงาน"
+        "ปัสbสาวะ" -> "ปัสสาวะ"
+        "Glucose (GLU)" -> "Glucose (GLU)" (preserved)
 
     Args:
         text: Text string that may contain corrupted characters
@@ -26,27 +33,14 @@ def sanitize_thai_text(text):
     if not isinstance(text, str):
         text = str(text)
 
-    # Common corrupted patterns found in Thai text
-    corrupted_patterns = {
-        "ทำbงาน": "ทำงาน",
-        "น้ำfb": "น้ำ",
-        "จำbเพาะ": "จำเพาะ",
-        "ความbถ่วง": "ความถ่วง",
-        "ปัสbสาวะ": "ปัสสาวะ",
-        "เม็ดbเลือด": "เม็ดเลือด",
-        "โปรbตีน": "โปรตีน",
-        "กลูbโคส": "กลูโคส",
-        "คีbโตน": "คีโตน",
-        "บิfลิรูบิน": "บิลิรูบิน",
-        "ไนfไตรต์": "ไนไตรต์",
-        "วิfตามิน": "วิตามิน",
-    }
+    # Regex: Remove [a-z]+ if preceded AND followed by Thai characters
+    # Pattern: (?<=[\u0E00-\u0E7F]) = positive lookbehind for Thai char
+    #          [a-z]+ = one or more lowercase English letters
+    #          (?=[\u0E00-\u0E7F]) = positive lookahead for Thai char
+    # This preserves "Glucose", "pH", "GLU" etc. while removing "ทำbงาน" -> "ทำงาน"
+    cleaned_text = re.sub(r'(?<=[\u0E00-\u0E7F])[a-z]+(?=[\u0E00-\u0E7F])', '', text)
 
-    # Apply all pattern replacements
-    for corrupted, clean in corrupted_patterns.items():
-        text = text.replace(corrupted, clean)
-
-    return text
+    return cleaned_text
 
 def parse_clinical_bullets(raw_bullets, sanitize=True):
     """

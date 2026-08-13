@@ -326,7 +326,7 @@ def process_image_with_ai(image_id, user_id, patient_name):
         # Model ID: anthropic/claude-sonnet-4.5 (Released: Sep 29, 2025, Context: 1M tokens)
         # หมายเหตุ: มี claude-sonnet-4.6 ออกใหม่แล้ว แต่ 4.5 stable และเหมาะกับงาน medical vision
         response = client.chat.completions.create(
-            model="anthropic/claude-sonnet-4.5",  # Claude Sonnet 4.5 - Medical-grade vision analysis
+            model="anthropic/claude-4.5-sonnet",  # Claude Sonnet 4.5 - Medical-grade vision analysis
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
