@@ -115,8 +115,9 @@ def get_cybow_mapping(param_code, raw_val):
         res["ref"] = "Negative"
         if val in ["neg.", "negative", "0", "neg"]:
             res.update({"result": "Negative", "color": "เหลือง/เขียวอ่อน", "status": "Normal"})
-        elif "trace" in val or "30" in val:
-            res.update({"result": "15 - 30 mg/dL (Trace)", "color": "เขียวตองอ่อน", "status": "Positive"})
+        # ✅ ปรับให้ Trace (15-30) เป็น Positive ธรรมดา ไม่ใช่ Positive (High)
+        elif "trace" in val or "30" in val or "15" in val:
+            res.update({"result": "15 - 30 mg/dL (Trace/+1)", "color": "เขียวตองอ่อน", "status": "Positive"})
         else:
             res.update({"result": "> 100 mg/dL", "color": "เขียว (Green)", "status": "Positive (High)"})
             

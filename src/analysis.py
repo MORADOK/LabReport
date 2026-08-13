@@ -13,15 +13,16 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 def sanitize_thai_text(text):
     """
-    🧹 Remove corrupted characters from Thai text (Regex-based smart cleaning)
+    🧹 Advanced Thai text sanitization with comprehensive corruption removal
 
-    Removes lowercase English letters (a-z) that are incorrectly inserted between
+    Removes English letters (a-z, A-Z) that are incorrectly inserted between or after
     Thai characters, while preserving valid medical terms like "Glucose (GLU)".
 
     Examples:
         "น้ำgcตาล" -> "น้ำตาล"
-        "ทำcงาน" -> "ทำงาน"
+        "ทำNงาน" -> "ทำงาน"
         "ปัสbสาวะ" -> "ปัสสาวะ"
+        "คำnแนะนำn:" -> "คำแนะนำ:"
         "Glucose (GLU)" -> "Glucose (GLU)" (preserved)
 
     Args:
@@ -33,23 +34,25 @@ def sanitize_thai_text(text):
     if not isinstance(text, str):
         text = str(text)
 
-    # Regex: Remove [a-z]+ if preceded AND followed by Thai characters
-    # Pattern: (?<=[\u0E00-\u0E7F]) = positive lookbehind for Thai char
-    #          [a-z]+ = one or more lowercase English letters
-    #          (?=[\u0E00-\u0E7F]) = positive lookahead for Thai char
-    # This preserves "Glucose", "pH", "GLU" etc. while removing "ทำbงาน" -> "ทำงาน"
-    cleaned_text = re.sub(r'(?<=[\u0E00-\u0E7F])[a-z]+(?=[\u0E00-\u0E7F])', '', text)
+    # Pattern 1: Remove [a-zA-Z]+ if preceded AND followed by Thai characters
+    # Handles: "น้ำgcตาล" -> "น้ำตาล", "ทำNงาน" -> "ทำงาน"
+    cleaned = re.sub(r'(?<=[\u0E00-\u0E7F])[a-zA-Z]+(?=[\u0E00-\u0E7F])', '', text)
 
-    return cleaned_text
+    # Pattern 2: Remove [a-zA-Z]+ after Thai characters before whitespace/punctuation
+    # Handles: "คำnแนะนำn:" -> "คำแนะนำ:", "สำnหรับ" -> "สำหรับ"
+    cleaned = re.sub(r'(?<=[\u0E00-\u0E7F])[a-zA-Z]+(?=[\s:;,.\)]|$)', '', cleaned)
+
+    return cleaned
 
 def parse_clinical_bullets(raw_bullets, sanitize=True):
     """
-    🌟 Bullet-proof JSON/List parser with 4-tier fallback system
+    🌟 Bullet-proof JSON/List parser with 5-tier fallback system
 
     Safely converts clinical_bullets from database (which might be JSON string,
-    Unicode-escaped string, or already a list) into a proper Python list.
+    Unicode-escaped string, backslash-wrapped text, or already a list) into a proper Python list.
 
     Fallback tiers:
+    - Plan 0: Backslash wrapper detection - Extract text between \\ ... \\
     - Plan A: json.loads() - Standard JSON parsing
     - Plan B: ast.literal_eval() - Python literal parsing
     - Plan C: Regex extraction - Extract quoted strings
@@ -72,6 +75,17 @@ def parse_clinical_bullets(raw_bullets, sanitize=True):
         # 1. Convert to string and clean artifacts + newlines
         if not isinstance(raw_bullets, str):
             raw_bullets = str(raw_bullets)
+
+        # PLAN 0: Detect backslash wrapper (e.g., \\text1\\, \\text2\\)
+        # This handles AI outputs that wrap each bullet in backslashes
+        if '\\\\' in raw_bullets:
+            extracted = re.findall(r'\\\\(.*?)\\\\', raw_bullets)
+            if extracted:
+                # Remove trailing commas and filter out very short strings
+                cleaned_list = [sanitize_thai_text(b.strip(',').strip()) if sanitize else b.strip(',').strip()
+                               for b in extracted if len(b.strip()) > 5]
+                if cleaned_list:
+                    return cleaned_list
 
         # Clean up artifacts and problematic newlines that break JSON
         cleaned_data = raw_bullets.replace('\n', ' ').strip()

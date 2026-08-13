@@ -22,9 +22,10 @@ class LHomePDFReport(FPDF):
         self.set_y(-20)
         self.set_draw_color(226, 232, 240)
         self.set_line_width(0.5)
-        
+
         self.set_font("THSarabun", "", 12)
         self.set_text_color(150, 150, 150)
+        # ✅ แก้ไข: ใช้คำว่า "สำหรับ" ที่ถูกต้อง (ไม่ใช่ "สำnหรับ")
         self.cell(0, 6, "เอกสารฉบับนี้สร้างโดยระบบ AI สำหรับการประเมินคัดกรองเบื้องต้นเท่านั้น", align="C", new_x="LMARGIN", new_y="NEXT")
         self.cell(0, 5, "Generated automatically by AI Analysis System • LHome Facility", align="C")
 
