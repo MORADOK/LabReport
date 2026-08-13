@@ -1,8 +1,6 @@
 import streamlit as st
 import sys
 import os
-import json
-import ast  # สำหรับ robust JSON parsing
 import pandas as pd
 import re
 from datetime import datetime
@@ -11,7 +9,7 @@ from src.pdf_generator import create_pdf
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
-from src.analysis import load_data, create_trend_chart
+from src.analysis import load_data, create_trend_chart, parse_clinical_bullets, sanitize_thai_text
 
 # ========================================
 # 🎨 Page Configuration
@@ -276,35 +274,17 @@ else:
                     case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
                     table_data = prepare_table_data(target_record)
                     
-                    # 🌟 Robust JSON parsing with Unicode escape handling
+                    # 🌟 Robust JSON parsing with Unicode escape handling + Text sanitization
                     db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-                    try:
-                        raw_bullets = target_record.get('clinical_bullets', '[]')
-
-                        # ดักจับและแปลง Unicode escape sequences กลับเป็นภาษาไทย
-                        if isinstance(raw_bullets, str):
-                            # ตรวจสอบว่ามี Unicode escape หรือไม่
-                            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
-                                try:
-                                    # แปลง Unicode escape กลับเป็นข้อความจริง
-                                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
-                                except:
-                                    pass  # ถ้าแปลงไม่ได้ ใช้ค่าเดิม
-                            db_bullets = ast.literal_eval(raw_bullets)
-                        else:
-                            db_bullets = raw_bullets
-
-                        if not isinstance(db_bullets, list):
-                            db_bullets = [str(db_bullets)]
-                    except Exception as e:
-                        db_bullets = ["ไม่สามารถแสดงข้อบ่งชี้ทางคลินิกได้ (Data Format Error)"]
+                    raw_bullets = target_record.get('clinical_bullets', '[]')
+                    db_bullets = parse_clinical_bullets(raw_bullets, sanitize=True)
 
                     pdf_bytes = create_pdf(
                         patient_name=target_record['notes'],
                         case_id=case_id,
                         date_str=str(target_record['date']),
                         table_data=table_data,
-                        summary_text=db_summary,
+                        summary_text=sanitize_thai_text(db_summary),
                         bullet_points=db_bullets
                     )
 
@@ -349,20 +329,7 @@ else:
                 st.success(latest['clinical_summary'])
                 if 'clinical_bullets' in latest and latest['clinical_bullets']:
                     try:
-                        raw_bullets = latest['clinical_bullets']
-
-                        # ดักจับและแปลง Unicode escape sequences กลับเป็นภาษาไทย
-                        if isinstance(raw_bullets, str):
-                            # ตรวจสอบว่ามี Unicode escape หรือไม่
-                            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
-                                try:
-                                    # แปลง Unicode escape กลับเป็นข้อความจริง
-                                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
-                                except:
-                                    pass  # ถ้าแปลงไม่ได้ ใช้ค่าเดิม
-                            bullets = ast.literal_eval(raw_bullets)
-                        else:
-                            bullets = raw_bullets
+                        bullets = parse_clinical_bullets(latest['clinical_bullets'])
                         if bullets and isinstance(bullets, list):
                             st.markdown("**ข้อบ่งชี้ทางคลินิก:**")
                             for bullet in bullets: st.markdown(f"• {bullet}")
@@ -383,34 +350,17 @@ else:
                     case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-001"
                     table_data = prepare_table_data(latest)
                     
-                    # 🌟 Robust JSON parsing with Unicode escape handling
+                    # 🌟 Robust JSON parsing with Unicode escape handling + Text sanitization
                     db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-                    try:
-                        raw_bullets = latest.get('clinical_bullets', '[]')
-
-                        # ดักจับและแปลง Unicode escape sequences กลับเป็นภาษาไทย
-                        if isinstance(raw_bullets, str):
-                            # ตรวจสอบว่ามี Unicode escape หรือไม่
-                            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
-                                try:
-                                    # แปลง Unicode escape กลับเป็นข้อความจริง
-                                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
-                                except:
-                                    pass  # ถ้าแปลงไม่ได้ ใช้ค่าเดิม
-                            db_bullets = ast.literal_eval(raw_bullets)
-                        else:
-                            db_bullets = raw_bullets
-                        if not isinstance(db_bullets, list):
-                            db_bullets = [str(db_bullets)]
-                    except Exception as e:
-                        db_bullets = ["ไม่สามารถแสดงข้อบ่งชี้ทางคลินิกได้ (Data Format Error)"]
+                    raw_bullets = latest.get('clinical_bullets', '[]')
+                    db_bullets = parse_clinical_bullets(raw_bullets, sanitize=True)
 
                     pdf_bytes = create_pdf(
                         patient_name=patient_name,
                         case_id=case_id,
                         date_str=str(latest['date']),
                         table_data=table_data,
-                        summary_text=db_summary,
+                        summary_text=sanitize_thai_text(db_summary),
                         bullet_points=db_bullets
                     )
 

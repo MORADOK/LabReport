@@ -1,12 +1,109 @@
 import pandas as pd
 import psycopg2
 import os
+import json
+import ast
 import plotly.express as px
 from dotenv import load_dotenv
 from src.db_handler import get_connection
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+def sanitize_thai_text(text):
+    """
+    🧹 Remove corrupted characters from Thai text
+
+    Fixes common issues where characters like 'b', 'f', 'fb' are incorrectly
+    inserted into Thai words (e.g., "ทำbงาน" -> "ทำงาน").
+
+    Args:
+        text: Text string that may contain corrupted characters
+
+    Returns:
+        str: Cleaned text with corrupted characters removed
+    """
+    if not isinstance(text, str):
+        text = str(text)
+
+    # Common corrupted patterns found in Thai text
+    corrupted_patterns = {
+        "ทำbงาน": "ทำงาน",
+        "น้ำfb": "น้ำ",
+        "จำbเพาะ": "จำเพาะ",
+        "ความbถ่วง": "ความถ่วง",
+        "ปัสbสาวะ": "ปัสสาวะ",
+        "เม็ดbเลือด": "เม็ดเลือด",
+        "โปรbตีน": "โปรตีน",
+        "กลูbโคส": "กลูโคส",
+        "คีbโตน": "คีโตน",
+        "บิfลิรูบิน": "บิลิรูบิน",
+        "ไนfไตรต์": "ไนไตรต์",
+        "วิfตามิน": "วิตามิน",
+    }
+
+    # Apply all pattern replacements
+    for corrupted, clean in corrupted_patterns.items():
+        text = text.replace(corrupted, clean)
+
+    return text
+
+def parse_clinical_bullets(raw_bullets, sanitize=True):
+    """
+    🌟 Robust JSON/List parsing with Unicode escape handling
+
+    Safely converts clinical_bullets from database (which might be JSON string,
+    Unicode-escaped string, or already a list) into a proper Python list.
+
+    Args:
+        raw_bullets: Raw data from database (str, list, or any type)
+        sanitize: If True, apply text sanitization to remove corrupted characters
+
+    Returns:
+        list: Parsed clinical bullets, or error message list if parsing fails
+    """
+    try:
+        # 1. Handle if already a list
+        if isinstance(raw_bullets, list):
+            return raw_bullets
+
+        # 2. Handle string inputs
+        if isinstance(raw_bullets, str):
+            # 2.1 Clean up Unicode escape sequences (e.g., \u0e34 -> Thai characters)
+            if r'\u0e' in raw_bullets or '\\u0e' in raw_bullets:
+                try:
+                    # Decode Unicode escapes back to actual Thai text
+                    raw_bullets = raw_bullets.encode('utf-8').decode('unicode_escape')
+                except Exception:
+                    pass  # If decoding fails, continue with original string
+
+            # 2.2 Try JSON parsing first (safer for most cases)
+            try:
+                db_bullets = json.loads(raw_bullets)
+            except json.JSONDecodeError:
+                # 2.3 Fallback to ast.literal_eval for Python-style strings
+                try:
+                    db_bullets = ast.literal_eval(raw_bullets)
+                except (ValueError, SyntaxError):
+                    # If both fail, treat the entire string as a single bullet point
+                    db_bullets = [raw_bullets]
+        else:
+            # 3. For any other type, convert to string and wrap in list
+            db_bullets = [str(raw_bullets)]
+
+        # 4. Ensure result is always a list
+        if not isinstance(db_bullets, list):
+            db_bullets = [str(db_bullets)]
+
+        # 5. Sanitize Thai text if requested
+        if sanitize:
+            db_bullets = [sanitize_thai_text(bullet) for bullet in db_bullets]
+
+        return db_bullets
+
+    except Exception as e:
+        # Final fallback: return error message
+        return ["ไม่สามารถโหลดข้อบ่งชี้ทางคลินิกได้ (Data Format Error)"]
 
 def load_data():
     """Load data with optimized query - only fetch necessary columns"""
