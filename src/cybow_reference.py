@@ -80,7 +80,7 @@ CYBOW_11M_EXACT_REFERENCE = {
     "ASC": {
         "normal": ["neg.", "neg", "negative", "0"],
         "high": ["+20(1.2)", "+20", "20", "++40(2.4)", "++40", "40"],  # เปลี่ยนเป็นเขียวหรือเหลือง
-        "color_normal": "เขียวอ่อน/เหลือง",
+        "color_normal": "น้ำเงินเข้ม/ฟ้าเข้ม (Dark Blue/Teal)",
         "color_high": "ส้ม (Orange)",
         "ref_range": "Negative"
     },
