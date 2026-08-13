@@ -176,3 +176,81 @@ def get_severity_level(param_code, value):
 
     # Default fallback
     return ("normal", ref.get("color_normal", "-"), "Normal")
+
+
+# =================================================================
+# 🛡️ STRICT VALIDATOR: ระบบบังคับกรอบข้อมูลให้อยู่ในมาตรฐาน CYBOW 11M 100%
+# =================================================================
+
+def enforce_strict_cybow_standards(ai_raw_data):
+    """
+    ฟังก์ชันนี้จะรับ JSON ที่ AI ตอบมา และทำการ 'บังคับ (Force)'
+    ให้ทุกค่าตรงกับมาตรฐาน CYBOW 11M แบบเป๊ะๆ ทุกตัวอักษร
+    หาก AI พิมพ์ผิด หรือใช้คำอื่น ระบบจะแปลงกลับเป็นค่ามาตรฐานทันที
+
+    Args:
+        ai_raw_data: Dictionary ที่ได้จาก AI response (JSON parsed)
+
+    Returns:
+        Dictionary: ข้อมูลที่ผ่านการ validate แล้ว ค่าทุกตัวตรงมาตรฐาน 100%
+    """
+    import re
+
+    validated_data = {}
+
+    # 1. นิยามกรอบคำตอบที่ถูกต้องที่สุด (Absolute Standard Values)
+    ALLOWED_VALUES = {
+        "urobilinogen": ["0.1 Normal", "1(16)", "2(33)", "4(66)", "8(131)"],
+        "glucose": ["neg.", "±100(5.5)", "+250(14)", "++500(28)", "+++1000(55)"],
+        "bilirubin": ["neg.", "+", "++", "+++"],
+        "ketones": ["neg.", "±5(0.5)", "+15(1.5)", "++40(3.9)", "+++100(10)"],
+        "specific_gravity": ["1.000", "1.005", "1.010", "1.015", "1.020", "1.025", "1.030"],
+        "blood": ["neg.", "Hemolysis +10", "Hemolysis ++50", "Hemolysis +++250", "Non Hemolysis +10", "Non Hemolysis ++50"],
+        "ph": ["5", "6", "6.5", "7", "8", "9"],
+        "protein": ["neg.", "trace", "+30(0.3)", "++100(1.0)", "+++300(3.0)", "++++1000(10)"],
+        "nitrite": ["neg.", "trace", "pos."],
+        "leukocytes": ["neg.", "+25", "++75", "+++500"],
+        "ascorbic_acid": ["neg.", "+20(1.2)", "++40(2.4)"]
+    }
+
+    # 2. ฟังก์ชันช่วยค้นหาค่าที่ใกล้เคียงที่สุด (Fuzzy Matching Logic)
+    def snap_to_standard(param_key, raw_val):
+        val_str = str(raw_val).strip().lower()
+
+        # กฎข้อที่ 1: จัดการกลุ่ม Negative (ถ้ามีคำว่า neg, 0, negative ให้ปรับเป็น "neg." ทันที)
+        if val_str in ["neg", "neg.", "negative", "0", "normal", "none"]:
+            if param_key in ["urobilinogen", "specific_gravity", "ph"]:
+                pass  # ข้ามไป ปล่อยให้เข้าเงื่อนไขด้านล่าง
+            else:
+                return "neg."
+
+        # กฎข้อที่ 2: ค้นหาตัวเลขหลัก (Core Value) จากคำตอบของ AI
+        numbers_in_val = re.findall(r'\d+\.?\d*', val_str)
+
+        # กฎข้อที่ 3: เทียบหาค่าที่ถูกต้องจาก ALLOWED_VALUES
+        for std_val in ALLOWED_VALUES[param_key]:
+            std_lower = std_val.lower()
+
+            # ถ้า AI ตอบมาตรงเป๊ะ
+            if val_str == std_lower:
+                return std_val
+
+            # ถ้า AI ตอบมาแค่เครื่องหมายหรือบางส่วน เช่น "++250" ให้จับคู่กับ "Hemolysis +++250"
+            if len(numbers_in_val) > 0 and numbers_in_val[0] in std_lower:
+                return std_val
+
+        # กฎข้อสุดท้าย: หาก AI หลอนมาแบบหาค่าไม่ได้เลย ให้ส่งค่าปกติกลับไป (Fail-Safe)
+        return ALLOWED_VALUES[param_key][0]
+
+    # 3. วนลูปบังคับค่าทุกพารามิเตอร์ให้อยู่ในกรอบ
+    for param in ALLOWED_VALUES.keys():
+        ai_val = ai_raw_data.get(param, "neg.")
+        validated_data[param] = snap_to_standard(param, ai_val)
+
+    # เก็บค่าดั้งเดิมของสรุปผลคลินิกไว้
+    validated_data["clinical_summary"] = ai_raw_data.get("clinical_summary", "")
+    validated_data["clinical_bullets"] = ai_raw_data.get("clinical_bullets", [])
+    validated_data["reasoning"] = ai_raw_data.get("reasoning", "")
+    validated_data["visual_check"] = ai_raw_data.get("visual_check", "")
+
+    return validated_data

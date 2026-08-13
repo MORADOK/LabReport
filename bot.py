@@ -16,7 +16,7 @@ from PIL import Image
 
 # นำเข้าโมดูลฐานข้อมูล (ที่เชื่อมกับ Supabase และมี RLS)
 from src import db_handler
-from src.cybow_reference import CYBOW_11M_EXACT_REFERENCE
+from src.cybow_reference import CYBOW_11M_EXACT_REFERENCE, enforce_strict_cybow_standards
 
 # โหลด Environment Variables
 load_dotenv()
@@ -398,6 +398,18 @@ def process_image_with_ai(image_id, user_id, patient_name):
         - ห้ามสมมติว่าผลปกติถ้ายังไม่ได้อ่านค่า!
         - ถ้าเห็นสีเปลี่ยนแปลงจาก negative ต้องรายงานตามความจริง!
         - ค่า negative ต้องมีสีที่ตรงกับ RGB reference ของ negative เท่านั้น!
+
+        🚨 **STRICT VALUE ENFORCEMENT** (การบังคับค่ามาตรฐาน 100%):
+        คุณต้องตอบค่าใน JSON ด้วย String ที่กำหนดไว้ใน 'value' ของ Reference แบบเป๊ะๆ 100%
+        ห้ามเพิ่ม/ลด/แก้ไขคำเด็ดขาด!
+
+        ตัวอย่างที่ถูกต้อง:
+        - โปรตีน: ต้องตอบ "++100(1.0)" ไม่ใช่ "++100" หรือ "100 mg/dL"
+        - กลูโคส: ต้องตอบ "±100(5.5)" ไม่ใช่ "±100" หรือ "100"
+        - เลือด: ต้องตอบ "Hemolysis +++250" ไม่ใช่ "+++250" หรือ "Hemolysis 250"
+
+        ✅ ตอบตาม 'value' ที่ระบุไว้ในตาราง RGB Reference ด้านบนเท่านั้น!
+        ❌ ห้ามใช้คำอื่น ห้ามตัดทอน ห้ามเติมคำ!
         """
 
         # 🌟 4. เรียก OpenRouter API (Claude Sonnet 4.5 - ความแม่นยำสูงสุดในการวิเคราะห์ภาพทางการแพทย์)
@@ -439,9 +451,13 @@ def process_image_with_ai(image_id, user_id, patient_name):
         # หาตำแหน่งตั้งแต่ { ตัวแรก จนถึง } ตัวสุดท้าย
         json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
         if json_match:
-            data = json.loads(json_match.group())
+            raw_data = json.loads(json_match.group())
         else:
             raise ValueError("AI ไม่ได้ส่งข้อมูลกลับมาในรูปแบบ JSON")
+
+        # 🛡️ 5.5. บังคับค่าให้ตรงมาตรฐาน CYBOW 11M 100% (Strict Validator)
+        data = enforce_strict_cybow_standards(raw_data)
+        print(f"--- VALIDATED DATA ---\n{json.dumps(data, ensure_ascii=False, indent=2)}\n-----------------------")
 
         # 6. บันทึกลง Database (ป้องกัน ValueError ด้วย extract_safe_float)
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
