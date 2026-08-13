@@ -322,11 +322,11 @@ def process_image_with_ai(image_id, user_id, patient_name):
         - ค่า negative ต้องมีสีที่ตรงกับ RGB reference ของ negative เท่านั้น!
         """
 
-        # 🌟 4. เรียก OpenRouter API (Claude 3.5 Sonnet - ความแม่นยำสูงสุดในการวิเคราะห์ภาพทางการแพทย์)
-        # Model ID: anthropic/claude-3.5-sonnet (Latest stable, Context: 200K tokens)
-        # Claude 3.5 Sonnet มีความแม่นยำสูงในการวิเคราะห์ภาพทางการแพทย์
+        # 🌟 4. เรียก OpenRouter API (Claude Sonnet 4.5 - ความแม่นยำสูงสุดในการวิเคราะห์ภาพทางการแพทย์)
+        # Model ID: anthropic/claude-4.5-sonnet (Latest version, Enhanced context window)
+        # Claude Sonnet 4.5 มีความแม่นยำสูงในการวิเคราะห์ภาพทางการแพทย์
         response = client.chat.completions.create(
-            model="anthropic/claude-3.5-sonnet",  # Claude 3.5 Sonnet - Medical-grade vision analysis
+            model="anthropic/claude-4.5-sonnet",  # Claude Sonnet 4.5 - Medical-grade vision analysis
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
