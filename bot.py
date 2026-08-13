@@ -16,6 +16,7 @@ from PIL import Image
 
 # นำเข้าโมดูลฐานข้อมูล (ที่เชื่อมกับ Supabase และมี RLS)
 from src import db_handler
+from src.cybow_reference import CYBOW_11M_EXACT_REFERENCE
 
 # โหลด Environment Variables
 load_dotenv()
@@ -226,15 +227,61 @@ def process_image_with_ai(image_id, user_id, patient_name):
         if not base64_image:
             raise ValueError("ไม่สามารถประมวลผลไฟล์ภาพได้")
 
-        # 🌟 3. สร้าง Detailed System Prompt พร้อมข้อมูล RGB แบบละเอียด
+        # 🌟 3. สร้าง Detailed System Prompt พร้อมข้อมูล RGB และคำอธิบายสีแบบละเอียด
         def format_standards_for_prompt():
-            """แปลง CYBOW_11M_STANDARDS เป็น text ที่อ่านง่ายสำหรับ AI"""
+            """
+            แปลง CYBOW_11M_EXACT_REFERENCE เป็นคำแนะนำการอ่านสีแบบละเอียดสำหรับ AI
+            รวมข้อมูล RGB จาก CYBOW_11M_STANDARDS และคำอธิบายสีจาก CYBOW_11M_EXACT_REFERENCE
+            """
             formatted = []
-            for param, levels in CYBOW_11M_STANDARDS.items():
-                param_info = f"\n{param.upper()}:"
-                for level in levels:
-                    param_info += f"\n  • {level['label']}: RGB{level['rgb']} → ใช้ค่า '{level['value']}'"
+
+            # แปลงชื่อพารามิเตอร์ให้ตรงกันระหว่าง 2 dictionaries
+            param_mapping = {
+                "urobilinogen": "URO",
+                "glucose": "GLU",
+                "bilirubin": "BIL",
+                "ketones": "KET",
+                "specific_gravity": "SG",
+                "blood": "BLO",
+                "ph": "pH",
+                "protein": "PRO",
+                "nitrite": "NIT",
+                "leukocytes": "LEU",
+                "ascorbic_acid": "ASC"
+            }
+
+            for param_old, param_code in param_mapping.items():
+                if param_old not in CYBOW_11M_STANDARDS:
+                    continue
+
+                rgb_levels = CYBOW_11M_STANDARDS[param_old]
+                ref_data = CYBOW_11M_EXACT_REFERENCE.get(param_code, {})
+
+                # หัวข้อพารามิเตอร์
+                param_info = f"\n📍 {param_code} ({param_old.upper()}):"
+
+                # รายละเอียดสีแต่ละระดับ
+                for rgb_level in rgb_levels:
+                    param_info += f"\n  • {rgb_level['label']}: RGB{rgb_level['rgb']} → ตอบ '{rgb_level['value']}'"
+
+                # เพิ่มคำอธิบายสีจาก reference (ถ้ามี)
+                if "color_normal" in ref_data:
+                    param_info += f"\n  💡 สีปกติ (Normal): {ref_data['color_normal']}"
+                if "color_warning" in ref_data:
+                    param_info += f"\n  ⚠️ สีผิดปกติระดับต่ำ (Warning): {ref_data['color_warning']}"
+                if "color_critical" in ref_data:
+                    param_info += f"\n  🚨 สีผิดปกติระดับสูง (Critical): {ref_data['color_critical']}"
+                if "color_high" in ref_data:
+                    param_info += f"\n  ⚠️ สีผิดปกติ (High): {ref_data['color_high']}"
+
+                # สำหรับ pH มีหลายสี
+                if param_code == "pH":
+                    param_info += f"\n  🍊 สีเป็นกรด (Acidic, pH<7): {ref_data.get('color_acidic', 'ส้ม')}"
+                    param_info += f"\n  🟡 สีกลางๆ (Neutral, pH=7): {ref_data.get('color_neutral', 'เหลือง')}"
+                    param_info += f"\n  🟢 สีเป็นด่าง (Alkaline, pH>7): {ref_data.get('color_alkaline', 'เขียว/ฟ้า')}"
+
                 formatted.append(param_info)
+
             return "\n".join(formatted)
 
         system_prompt = f"""

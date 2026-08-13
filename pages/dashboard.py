@@ -10,6 +10,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
 from src.analysis import load_data, create_trend_chart, parse_clinical_bullets, sanitize_thai_text
+from src.cybow_reference import CYBOW_11M_EXACT_REFERENCE, get_severity_level
 
 # ========================================
 # 🎨 Page Configuration
@@ -40,12 +41,116 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ========================================
-# 🌟 Data Mapping (แปลงค่าดิบเป็น 4 คอลัมน์)
+# 🌟 Data Mapping (แปลงค่าดิบเป็น 4 คอลัมน์) - ใช้ CYBOW 11M Exact Reference
 # ========================================
 def get_cybow_mapping(param_code, raw_val):
+    """
+    แปลงค่าดิบจาก Database เป็น 4 คอลัมน์สำหรับแสดงในตาราง
+    ใช้ CYBOW_11M_EXACT_REFERENCE เป็นฐานข้อมูลอ้างอิง
+    """
+    val = str(raw_val).lower().strip()
+
+    # Handle N/A cases
+    if val in ["n/a", "-", "", "none"]:
+        return {"result": "N/A", "ref": "-", "color": "-", "status": "N/A"}
+
+    # Get severity level and color from reference
+    severity, color, status = get_severity_level(param_code, val)
+
+    # Get reference range
+    if param_code in CYBOW_11M_EXACT_REFERENCE:
+        ref_data = CYBOW_11M_EXACT_REFERENCE[param_code]
+        ref_range = ref_data.get("ref_range", "Negative")
+    else:
+        ref_range = "Negative"
+
+    # Format result based on parameter type and value
+    result = format_result_value(param_code, raw_val, severity)
+
+    return {"result": result, "ref": ref_range, "color": color, "status": status}
+
+
+def format_result_value(param_code, raw_val, severity):
+    """
+    จัดรูปแบบการแสดงผลให้เหมาะสมกับแต่ละพารามิเตอร์
+    """
+    val = str(raw_val).strip()
+
+    # For negative results
+    if severity == "normal" and val.lower() in ["neg.", "neg", "negative", "0"]:
+        return "Negative"
+
+    # Special handling for pH
+    if param_code == "pH":
+        try:
+            num = float(re.findall(r'\d+\.?\d*', val)[0])
+            nature = "(Acidic)" if num < 7.0 else "(Alkaline)" if num > 7.0 else "(Neutral)"
+            return f"{num:.1f} {nature}"
+        except:
+            return val
+
+    # Special handling for SG
+    if param_code == "SG":
+        try:
+            num = float(re.findall(r'\d+\.?\d*', val)[0])
+            return f"{num:.3f}"
+        except:
+            return val
+
+    # URO specific formatting
+    if param_code == "URO" and severity == "normal":
+        if "0.1" in val.lower() or "normal" in val.lower():
+            return "0.1 - 1.0"
+        elif "1(16)" in val or "1" in val:
+            return "1.0 (16 µmol/L)"
+
+    # For high values, add descriptive text
+    if param_code == "URO" and severity == "high":
+        return "> 2.0 (High)"
+
+    if param_code == "GLU":
+        if severity == "warning":
+            return f"±100-250 mg/dL" if "100" in val or "±" in val else "+250(14)"
+        elif severity == "critical":
+            return "++500 ถึง +++1000" if "500" in val or "1000" in val else "> 500 mg/dL"
+
+    if param_code == "KET":
+        if severity == "warning":
+            return "±5-15 mg/dL" if "5" in val or "15" in val or "±" in val else "+15(1.5)"
+        elif severity == "critical":
+            return "++40 ถึง +++100" if "40" in val or "100" in val else "> 40 mg/dL"
+
+    if param_code == "BLO":
+        if severity == "warning":
+            return "+ 10 Ery/µL" if "10" in val else "+10"
+        elif severity == "critical":
+            return "++ 50 ถึง +++ 250" if "50" in val or "250" in val or "hemolysis" in val.lower() else "+++250"
+
+    if param_code == "PRO":
+        if severity == "warning":
+            return "15 - 30 mg/dL (Trace/+1)" if "trace" in val.lower() or "15" in val or "30" in val else "+30(0.3)"
+        elif severity == "critical":
+            return "> 100 mg/dL" if "100" in val or "300" in val or "1000" in val else "++100 ถึง ++++1000"
+
+    if param_code == "LEU":
+        if severity == "warning":
+            return "+ 25 Leu/µL"
+        elif severity == "critical":
+            return "++ 75 ถึง +++ 500"
+
+    # Default: return uppercase formatted value
+    return val.upper().replace("±", "+-") if severity != "normal" else val
+
+
+# Legacy function - kept for compatibility but redirects to new system
+def get_cybow_mapping_legacy(param_code, raw_val):
+    """
+    ⚠️ DEPRECATED: ใช้ get_cybow_mapping() แทน
+    เก็บไว้เพื่อ backward compatibility เท่านั้น
+    """
     val = str(raw_val).lower().strip()
     res = {"result": str(raw_val), "ref": "Negative", "color": "-", "status": "Normal"}
-    
+
     if val in ["n/a", "-", "", "none"]:
         return {"result": "N/A", "ref": "-", "color": "-", "status": "N/A"}
 
