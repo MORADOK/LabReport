@@ -46,7 +46,7 @@ CYBOW_11M_EXACT_REFERENCE = {
     "BLO": {
         "normal": ["neg.", "neg", "negative", "0"],
         "warning": ["hemolysis+10", "hemolysis +10", "+10", "non hemolysis +10"],  # จุดสีเขียว หรือ เขียวอ่อน
-        "critical": ["++50", "50", "+++250", "250", "non hemolysis ++50", "hemolysis"],  # เขียวเข้มจัด / จุดหนาแน่น
+        "critical": ["hemolysis ++50", "hemolysis++50", "hemolysis +++250", "hemolysis+++250", "++50", "50", "+++250", "250", "non hemolysis ++50"],  # เขียวเข้มจัด / จุดหนาแน่น
         "color_normal": "เหลือง (Yellow)",
         "color_warning": "เขียวอ่อน (Light Green)",
         "color_critical": "เขียวเข้ม (Dark Green)",
@@ -94,6 +94,7 @@ CYBOW_11M_EXACT_REFERENCE = {
     "pH": {
         "min_normal": 5.0,
         "max_normal": 8.0,
+        "color_normal": "เหลือง (Yellow)",  # Default normal color
         "color_acidic": "ส้ม (Orange)",
         "color_neutral": "เหลือง",
         "color_alkaline": "เขียว/ฟ้า",
@@ -223,6 +224,16 @@ def enforce_strict_cybow_standards(ai_raw_data):
                 pass  # ข้ามไป ปล่อยให้เข้าเงื่อนไขด้านล่าง
             else:
                 return "neg."
+
+        # กฎข้อที่ 1.5: จัดการกลุ่ม Positive สำหรับ nitrite (pos, positive → pos.)
+        if param_key == "nitrite" and val_str in ["pos", "positive"]:
+            return "pos."
+
+        # กฎข้อที่ 1.6: จัดการคำพิเศษ เช่น "trace value" → "trace"
+        if "trace" in val_str:
+            for std_val in ALLOWED_VALUES[param_key]:
+                if std_val.lower() == "trace":
+                    return std_val
 
         # กฎข้อที่ 2: ค้นหาตัวเลขหลัก (Core Value) จากคำตอบของ AI
         numbers_in_val = re.findall(r'\d+\.?\d*', val_str)
