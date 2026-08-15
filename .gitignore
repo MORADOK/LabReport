@@ -51,6 +51,10 @@ Thumbs.db
 *.tmp
 temp/
 tmp/
+nul
+
+# Test output files
+test_output*.pdf
 
 # Streamlit
 .streamlit/secrets.toml

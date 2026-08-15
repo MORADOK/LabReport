@@ -379,6 +379,35 @@ def process_image_with_ai(image_id, user_id, patient_name):
         {{
             "reasoning": "อ่านจากซ้ายไปขวา: แถบ1(URO)=ครีม, แถบ2(GLU)=ฟ้า, ..., แถบ6(BLO)=เหลือง, แถบ7(pH)=ส้ม, ..., แถบ11(ASC)=น้ำเงินเข้ม",
             "visual_check": "ตรวจสอบตำแหน่ง: แถบ 6 (BLO) สีเหลือง=Negative, แถบ 11 ขวาสุด (ASC) สีน้ำเงินเข้ม=Negative",
+
+            "detected_rgb": {{
+                "urobilinogen": [R, G, B],
+                "glucose": [R, G, B],
+                "bilirubin": [R, G, B],
+                "ketones": [R, G, B],
+                "specific_gravity": [R, G, B],
+                "blood": [R, G, B],
+                "ph": [R, G, B],
+                "protein": [R, G, B],
+                "nitrite": [R, G, B],
+                "leukocytes": [R, G, B],
+                "ascorbic_acid": [R, G, B]
+            }},
+
+            "confidence_scores": {{
+                "urobilinogen": 95,
+                "glucose": 98,
+                "bilirubin": 92,
+                "ketones": 94,
+                "specific_gravity": 90,
+                "blood": 96,
+                "ph": 93,
+                "protein": 97,
+                "nitrite": 91,
+                "leukocytes": 95,
+                "ascorbic_acid": 89
+            }},
+
             "urobilinogen": "เลือกจาก value ใน reference",
             "glucose": "เลือกจาก value ใน reference",
             "bilirubin": "เลือกจาก value ใน reference",
@@ -393,6 +422,14 @@ def process_image_with_ai(image_id, user_id, patient_name):
             "clinical_summary": "สรุปผลตามค่าที่อ่านได้จริง (ไม่ใช่สมมติว่าปกติ)",
             "clinical_bullets": ["วิเคราะห์ตามข้อมูลจริงที่เห็น"]
         }}
+
+        🎯 **RGB DETECTION & CONFIDENCE SCORING**:
+        - detected_rgb: บันทึกค่า RGB ที่ตรวจพบจากภาพจริงของแต่ละแถบ (เป็น array [R, G, B])
+        - confidence_scores: ระดับความมั่นใจ 0-100% (คำนวณจาก Euclidean Distance)
+          * 95-100% = สีใกล้เคียงมาตรฐานมาก (distance < 20)
+          * 85-94% = สีใกล้เคียงดี (distance 20-40)
+          * 70-84% = สีใกล้เคียงปานกลาง (distance 40-60)
+          * < 70% = สีแตกต่างจากมาตรฐาน (distance > 60) - ควรแจ้งเตือน
 
         **CRITICAL WARNING**:
         - ห้ามสมมติว่าผลปกติถ้ายังไม่ได้อ่านค่า!
@@ -486,9 +523,14 @@ def process_image_with_ai(image_id, user_id, patient_name):
         )
 
         if success:
+            # สร้างข้อความแสดงผล รวมถึง overall confidence
+            overall_conf = data.get('overall_confidence', 85.0)
+            confidence_emoji = "🟢" if overall_conf >= 90 else "🟡" if overall_conf >= 75 else "🟠"
+
             reply_msg = (
                 f"✅ บันทึกผลตรวจสำเร็จ!\n👤 คนไข้: {patient_name}\n\n"
                 f"📝 สรุปผล:\n{data.get('clinical_summary', '')}\n\n"
+                f"{confidence_emoji} ความมั่นใจ: {overall_conf:.1f}%\n\n"
                 f"สามารถกดดูรายงาน PDF ฉบับเต็มได้ที่ระบบ LHome Dashboard ครับ!"
             )
             line_bot_api.push_message(user_id, TextSendMessage(text=reply_msg))

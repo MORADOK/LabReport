@@ -183,6 +183,78 @@ def get_severity_level(param_code, value):
 # 🛡️ STRICT VALIDATOR: ระบบบังคับกรอบข้อมูลให้อยู่ในมาตรฐาน CYBOW 11M 100%
 # =================================================================
 
+def calculate_confidence_from_rgb(detected_rgb, param_code, selected_value):
+    """
+    คำนวณ confidence score จากค่า RGB ที่ตรวจพบเทียบกับค่ามาตรฐาน
+
+    Args:
+        detected_rgb: list [R, G, B] ที่ตรวจพบจากภาพ
+        param_code: รหัสพารามิเตอร์ (urobilinogen, glucose, etc.)
+        selected_value: ค่าที่เลือกได้จากการวิเคราะห์
+
+    Returns:
+        int: confidence score 0-100%
+    """
+    import math
+
+    # Map parameter names
+    param_mapping = {
+        "urobilinogen": "urobilinogen",
+        "glucose": "glucose",
+        "bilirubin": "bilirubin",
+        "ketones": "ketones",
+        "specific_gravity": "specific_gravity",
+        "blood": "blood",
+        "ph": "ph",
+        "protein": "protein",
+        "nitrite": "nitrite",
+        "leukocytes": "leukocytes",
+        "ascorbic_acid": "ascorbic_acid"
+    }
+
+    # Get RGB standards from bot.py CYBOW_11M_STANDARDS
+    # Import here to avoid circular dependency
+    from bot import CYBOW_11M_STANDARDS
+
+    std_param = param_mapping.get(param_code)
+    if not std_param or std_param not in CYBOW_11M_STANDARDS:
+        return 85  # Default confidence if parameter not found
+
+    standards = CYBOW_11M_STANDARDS[std_param]
+
+    # Find the RGB value for the selected result
+    target_rgb = None
+    for level in standards:
+        if level.get("value") == selected_value:
+            target_rgb = level.get("rgb")
+            break
+
+    if not target_rgb or not detected_rgb:
+        return 85  # Default confidence
+
+    # Calculate Euclidean Distance
+    try:
+        r1, g1, b1 = detected_rgb
+        r2, g2, b2 = target_rgb
+        distance = math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2)
+
+        # Convert distance to confidence score (0-100%)
+        # Distance 0 = 100%, Distance 100+ = 0%
+        if distance < 20:
+            confidence = 100 - (distance * 0.5)  # 95-100%
+        elif distance < 40:
+            confidence = 90 - ((distance - 20) * 0.5)  # 85-94%
+        elif distance < 60:
+            confidence = 80 - ((distance - 40) * 0.5)  # 70-84%
+        else:
+            confidence = max(0, 70 - (distance - 60))  # < 70%
+
+        return int(round(confidence))
+
+    except (ValueError, TypeError):
+        return 85  # Fallback
+
+
 def enforce_strict_cybow_standards(ai_raw_data):
     """
     ฟังก์ชันนี้จะรับ JSON ที่ AI ตอบมา และทำการ 'บังคับ (Force)'
@@ -263,5 +335,37 @@ def enforce_strict_cybow_standards(ai_raw_data):
     validated_data["clinical_bullets"] = ai_raw_data.get("clinical_bullets", [])
     validated_data["reasoning"] = ai_raw_data.get("reasoning", "")
     validated_data["visual_check"] = ai_raw_data.get("visual_check", "")
+
+    # 4. เก็บข้อมูล RGB detection และคำนวณ confidence scores
+    detected_rgb = ai_raw_data.get("detected_rgb", {})
+    ai_confidence = ai_raw_data.get("confidence_scores", {})
+
+    validated_data["detected_rgb"] = detected_rgb
+    validated_data["confidence_scores"] = {}
+
+    # คำนวณ confidence score ใหม่จากค่า RGB (ถ้า AI ให้มา) หรือใช้ค่าที่ AI ประมาณมา
+    for param in ALLOWED_VALUES.keys():
+        param_rgb = detected_rgb.get(param)
+        selected_value = validated_data.get(param)
+
+        if param_rgb and isinstance(param_rgb, list) and len(param_rgb) == 3:
+            # คำนวณจาก RGB distance
+            confidence = calculate_confidence_from_rgb(param_rgb, param, selected_value)
+        elif param in ai_confidence:
+            # ใช้ค่าที่ AI ประมาณมา (ถ้ามี)
+            confidence = int(ai_confidence[param])
+        else:
+            # Default confidence
+            confidence = 85
+
+        validated_data["confidence_scores"][param] = confidence
+
+    # คำนวณ overall confidence (เฉลี่ย)
+    all_scores = list(validated_data["confidence_scores"].values())
+    if all_scores:
+        overall_confidence = sum(all_scores) / len(all_scores)
+        validated_data["overall_confidence"] = round(overall_confidence, 1)
+    else:
+        validated_data["overall_confidence"] = 85.0
 
     return validated_data
