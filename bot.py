@@ -210,6 +210,13 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             return
         diagnostics = sample_regions(image, raw_data.get("pad_regions"), data)
         diagnostics["image_quality"] = quality
+        if not diagnostics.get("roi_consistency", {}).get("accepted", True):
+            logger.warning("Rejected implausible pad ROIs: %s", diagnostics.get("roi_consistency"))
+            raise ValueError("ตำแหน่งช่องทดสอบไม่สอดคล้องกับสีในภาพ กรุณาถ่ายภาพใหม่ให้แถบตรวจชัดและใกล้ขึ้น")
+        if not diagnostics.get("pixel_crosscheck", {}).get("accepted", True):
+            mismatches = ", ".join(diagnostics["pixel_crosscheck"].get("mismatches", []))
+            logger.warning("Rejected AI/pixel mismatch: %s", diagnostics.get("pixel_crosscheck"))
+            raise ValueError(f"ผล AI ขัดแย้งกับสีที่ตรวจพบในช่อง: {mismatches} กรุณาถ่ายภาพใหม่หรือให้ผู้ตรวจสอบผล")
         if len(diagnostics["detected_rgb"]) != len(ALLOWED_VALUES):
             line_bot_api.push_message(user_id, TextSendMessage(
                 text="ระบุตำแหน่งแถบสีได้ไม่ครบ กรุณาถ่ายแผ่น CYBOW 11M ให้ใกล้ขึ้น เห็นครบทั้ง 11 ช่อง และหลีกเลี่ยงแสงสะท้อน"))

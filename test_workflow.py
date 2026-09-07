@@ -9,8 +9,8 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
-from PIL import Image
-from src.standards import ALLOWED_VALUES
+from PIL import Image, ImageDraw
+from src.standards import ALLOWED_VALUES, CYBOW_11M_STANDARDS
 from src.cybow_reference import enforce_strict_cybow_standards
 from src.image_diagnostics import prepare_image, image_quality, sample_regions
 
@@ -26,7 +26,15 @@ def functions_from(path, names, namespace):
 
 class WorkflowTests(unittest.TestCase):
     def run_workflow(self, payload):
-        image = Image.effect_noise((400,400),40).convert("RGB")
+        image = Image.effect_noise((400,400),12).convert("RGB")
+        draw = ImageDraw.Draw(image)
+        # Paint each proposed pad with the matching reference color so the happy-path
+        # fixture represents a physically coherent strip rather than random noise.
+        for i, p in enumerate(ALLOWED_VALUES):
+            x1, y1, x2, y2 = [.05+i*.08,.1,.1+i*.08,.3]
+            ref = next((r for r in CYBOW_11M_STANDARDS[p] if r["value"] == payload.get(p)), None)
+            color = ref["rgb"] if ref else (80 + i*10, 120, 180)
+            draw.rectangle((int(x1*400), int(y1*400), int(x2*400), int(y2*400)), fill=color)
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG")
         raw = buffer.getvalue()
