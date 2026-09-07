@@ -16,6 +16,19 @@ class ImageTests(unittest.TestCase):
         for param in ("blood",):
             self.assertIsNone(similarity([100,100,100], param, "neg."))
 
+    def test_color_normalization_corrects_channel_cast(self):
+        from src.image_diagnostics import normalize_rgb
+        n = {"gains": [1.1, 0.9, 1.0]}
+        self.assertEqual(normalize_rgb([100, 100, 100], n), [110.0, 90.0, 100.0])
+
+    def test_neutral_reference_reports_safe_gains(self):
+        from src.image_diagnostics import estimate_neutral_reference
+        image = Image.new("RGB", (200, 200), (210, 200, 190))
+        result = estimate_neutral_reference(image)
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["method"], "bright_low_saturation_white_balance_v1")
+        self.assertEqual(len(result["gains"]), 3)
+
     def test_ref0974_calibration_key_colors(self):
         from src.standards import CYBOW_11M_STANDARDS, CALIBRATION_SOURCE
         self.assertIn("REF 0974", CALIBRATION_SOURCE)
