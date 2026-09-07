@@ -54,6 +54,7 @@ user_states = {}
 # ---------------------------------------------------------
 from src.standards import ALLOWED_VALUES
 from src.image_diagnostics import prepare_image, image_quality, sample_regions
+from src.strip_geometry import detect_geometry_regions
 
 # ---------------------------------------------------------
 # 🖼️ Image Optimization (In-Memory Processing - Cloud-Native)
@@ -208,8 +209,15 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
                 text="ยังบันทึกผลไม่ได้ กรุณาถ่ายแผ่น CYBOW 11M ให้เต็มภาพ แสงสม่ำเสมอ และเห็นแถบสีทั้ง 11 ช่องชัดเจน ช่องที่อ่านไม่ได้: "
                      + ", ".join(data["validation_errors"])))
             return
-        diagnostics = sample_regions(image, raw_data.get("pad_regions"), data)
+        ai_regions = raw_data.get("pad_regions")
+        geometry = detect_geometry_regions(image, ai_regions)
+        # Pixel geometry is primary when a safe 11-pad lattice can be fitted.
+        # AI regions remain a fallback and help resolve strip direction.
+        selected_regions = geometry.get("regions") if geometry.get("accepted") else ai_regions
+        diagnostics = sample_regions(image, selected_regions, data)
         diagnostics["image_quality"] = quality
+        diagnostics["geometry_detection"] = geometry
+        diagnostics["region_source"] = geometry.get("source") if geometry.get("accepted") else "ai_fallback"
         if not diagnostics.get("roi_consistency", {}).get("accepted", True):
             logger.warning("Rejected implausible pad ROIs: %s", diagnostics.get("roi_consistency"))
             raise ValueError("ตำแหน่งช่องทดสอบไม่สอดคล้องกับสีในภาพ กรุณาถ่ายภาพใหม่ให้แถบตรวจชัดและใกล้ขึ้น")

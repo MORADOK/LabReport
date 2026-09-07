@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 from src.standards import ALLOWED_VALUES, CYBOW_11M_STANDARDS
 from src.cybow_reference import enforce_strict_cybow_standards
 from src.image_diagnostics import prepare_image, image_quality, sample_regions
+from src.strip_geometry import detect_geometry_regions
 
 ROOT = Path(__file__).parent
 
@@ -48,6 +49,7 @@ class WorkflowTests(unittest.TestCase):
         import os
         ns = dict(os=os, json=json, re=re, base64=base64, datetime=datetime, ALLOWED_VALUES=ALLOWED_VALUES,
                   prepare_image=prepare_image, image_quality=image_quality, sample_regions=sample_regions,
+                  detect_geometry_regions=detect_geometry_regions,
                   enforce_strict_cybow_standards=enforce_strict_cybow_standards,
                   line_bot_api=line, client=client, db_handler=db, logger=logging.getLogger("test"),
                   TextSendMessage=lambda **kw: kw, resize_image_to_base64_from_bytes=lambda *a,**kw:base64.b64encode(raw))
