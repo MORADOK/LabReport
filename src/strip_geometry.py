@@ -168,41 +168,112 @@ def _geometry_centers(axis, lattice):
              oy + (lattice["start"] + i * lattice["spacing"]) * uy) for i in range(12)]
 
 
-def _resolve_reagent_centers(centers, ai_regions):
-    """Resolve lattice phase, compensation end, and semantic direction.
+def _handle_score(image, endpoint, outward, spacing_norm):
+    """Score smooth neutral strip material extending beyond a lattice endpoint."""
+    ux, uy = outward
+    norm = math.hypot(ux, uy)
+    if norm <= 0:
+        return 0.0
+    ux, uy = ux / norm, uy / norm
+    # Sample from just beyond the last pad through several pad pitches.
+    score = 0.0
+    valid = 0
+    for step in (0.65, 1.0, 1.4, 1.8, 2.3, 2.8, 3.4):
+        cx = endpoint[0] + ux * spacing_norm * step
+        cy = endpoint[1] + uy * spacing_norm * step
+        if not (0.01 < cx < 0.99 and 0.01 < cy < 0.99):
+            continue
+        half = max(3, int(round(min(image.size) * spacing_norm * 0.11)))
+        px, py = int(round(cx * image.width)), int(round(cy * image.height))
+        box = (max(0, px-half), max(0, py-half), min(image.width, px+half+1), min(image.height, py+half+1))
+        roi = image.crop(box)
+        if min(roi.size) < 3:
+            continue
+        hsv = roi.convert("HSV")
+        hstat = ImageStat.Stat(hsv)
+        gray = roi.convert("L")
+        gstat = ImageStat.Stat(gray)
+        sat, val = hstat.median[1], hstat.median[2]
+        texture = gstat.stddev[0]
+        valid += 1
+        # CYBOW handle is pale/neutral and locally smooth. Tissue/background may be
+        # bright too, so low texture is deliberately weighted strongly.
+        neutral = max(0.0, 1.0 - sat / 55.0)
+        bright = max(0.0, min(1.0, (val - 100.0) / 115.0))
+        smooth = max(0.0, 1.0 - texture / 28.0)
+        score += 0.35 * neutral + 0.25 * bright + 0.40 * smooth
+    return score / valid if valid else 0.0
 
-    Low-saturation pads can be absent from color-component detection, so the
-    lattice phase may be one pitch off. AI endpoint proposals are used only
-    to choose among integer-pitch geometry hypotheses.
+
+def _resolve_reagent_centers(image, centers, ai_regions):
+    """Resolve phase, compensation end and orientation using the physical handle.
+
+    The long smooth neutral handle extends beyond the ascorbic-acid end of CYBOW
+    11M. AI endpoints are secondary evidence only when the handle signal is weak.
     """
-    if not isinstance(ai_regions, dict) or len(centers) != 12:
+    if len(centers) != 12:
         return None
-    uro, asc = ai_regions.get("urobilinogen"), ai_regions.get("ascorbic_acid")
-    if not (isinstance(uro, list) and len(uro) == 4 and isinstance(asc, list) and len(asc) == 4):
-        return None
-    ai_uro, ai_asc = _center(uro), _center(asc)
     dx = centers[1][0] - centers[0][0]
     dy = centers[1][1] - centers[0][1]
+    spacing_norm = math.hypot(dx, dy)
+    if spacing_norm <= 0:
+        return None
+
+    ai_uro = ai_asc = None
+    if isinstance(ai_regions, dict):
+        uro, asc = ai_regions.get("urobilinogen"), ai_regions.get("ascorbic_acid")
+        if isinstance(uro, list) and len(uro) == 4 and isinstance(asc, list) and len(asc) == 4:
+            ai_uro, ai_asc = _center(uro), _center(asc)
+
     ranked = []
     for shift in range(-2, 3):
         shifted = [(x + shift * dx, y + shift * dy) for x, y in centers]
+        if any(not (0.005 <= x <= 0.995 and 0.005 <= y <= 0.995) for x, y in shifted):
+            continue
+
+        # Handle after the final lattice position => compensation is first.
+        forward_handle = _handle_score(image, shifted[-1], (dx, dy), spacing_norm)
+        # Handle before the first lattice position => compensation is last.
+        reverse_handle = _handle_score(image, shifted[0], (-dx, -dy), spacing_norm)
         hypotheses = [
-            (shifted[1:], shifted[0], "compensation_before_forward"),
-            (list(reversed(shifted[:-1])), shifted[-1], "compensation_after_reverse"),
+            (shifted[1:], shifted[0], "compensation_before_forward", forward_handle, reverse_handle),
+            (list(reversed(shifted[:-1])), shifted[-1], "compensation_after_reverse", reverse_handle, forward_handle),
         ]
-        for reagent, compensation, direction in hypotheses:
-            if any(not (0.005 <= x <= 0.995 and 0.005 <= y <= 0.995) for x, y in shifted):
-                continue
-            error = _dist(reagent[0], ai_uro) + _dist(reagent[-1], ai_asc)
-            ranked.append((error, reagent, compensation, direction, shift))
+        for reagent, compensation, direction, handle_score, opposite_score in hypotheses:
+            # Primary score: physical handle should be stronger on the ascorbic end.
+            handle_margin = handle_score - opposite_score
+            objective = handle_margin * 4.0 + handle_score
+            endpoint_error = None
+            if ai_uro is not None and ai_asc is not None:
+                endpoint_error = _dist(reagent[0], ai_uro) + _dist(reagent[-1], ai_asc)
+                # AI only breaks ties/phase ambiguity; it cannot override strong handle evidence.
+                objective -= endpoint_error * 4.0
+            ranked.append({
+                "objective": objective, "reagent": reagent, "compensation": compensation,
+                "direction": direction, "shift": shift, "handle_score": handle_score,
+                "opposite_handle_score": opposite_score, "handle_margin": handle_margin,
+                "endpoint_error": endpoint_error,
+            })
+
     if not ranked:
         return None
-    ranked.sort(key=lambda x: x[0])
-    if len(ranked) > 1 and ranked[1][0] - ranked[0][0] < 0.008:
-        return None
+    ranked.sort(key=lambda x: x["objective"], reverse=True)
     best = ranked[0]
-    return {"centers": best[1], "compensation_center": best[2],
-            "direction": best[3], "phase_shift": best[4], "endpoint_error": best[0]}
+    second = ranked[1] if len(ranked) > 1 else None
+    # Require either a meaningful physical handle margin or a clearly superior combined hypothesis.
+    objective_gap = best["objective"] - second["objective"] if second else 999.0
+    handle_clear = best["handle_margin"] >= 0.055
+    combined_clear = objective_gap >= 0.035 and best["handle_score"] >= 0.45
+    if not (handle_clear or combined_clear):
+        return None
+    return {
+        "centers": best["reagent"], "compensation_center": best["compensation"],
+        "direction": best["direction"], "phase_shift": best["shift"],
+        "endpoint_error": best["endpoint_error"], "handle_score": best["handle_score"],
+        "opposite_handle_score": best["opposite_handle_score"],
+        "handle_margin": best["handle_margin"], "orientation_objective_gap": objective_gap,
+        "orientation_source": "physical_handle" if handle_clear else "handle_plus_ai",
+    }
 
 def detect_geometry_regions(image, ai_regions=None):
     components, thumb_size, scale = _candidate_components(image)
@@ -226,7 +297,7 @@ def detect_geometry_regions(image, ai_regions=None):
     if any(not (0.01 <= x <= 0.99 and 0.01 <= y <= 0.99) for x, y in centers_norm):
         return {"accepted": False, "reason": "fitted pad lattice extends outside image", "regions": {}}
 
-    mapping = _resolve_reagent_centers(centers_norm, ai_regions)
+    mapping = _resolve_reagent_centers(image, centers_norm, ai_regions)
     if mapping is None:
         return {"accepted": False, "reason": "strip direction/compensation area is ambiguous", "regions": {},
                 "angle_degrees": round(angle, 1), "matched_components": lattice["count"]}
@@ -255,8 +326,13 @@ def detect_geometry_regions(image, ai_regions=None):
         "source": "pixel_geometry_lattice_v1",
         "direction": direction,
         "compensation_center": [round(v, 5) for v in mapping["compensation_center"]],
-        "endpoint_error": round(mapping["endpoint_error"], 4),
+        "endpoint_error": round(mapping["endpoint_error"], 4) if mapping["endpoint_error"] is not None else None,
         "phase_shift": mapping["phase_shift"],
+        "orientation_source": mapping["orientation_source"],
+        "handle_score": round(mapping["handle_score"], 4),
+        "opposite_handle_score": round(mapping["opposite_handle_score"], 4),
+        "handle_margin": round(mapping["handle_margin"], 4),
+        "orientation_objective_gap": round(mapping["orientation_objective_gap"], 4),
         "lattice_positions": 12,
         "angle_degrees": round(angle, 1),
         "matched_components": lattice["count"],
