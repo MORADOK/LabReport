@@ -8,26 +8,23 @@ class GeometryTests(unittest.TestCase):
     def _synthetic_strip(self, reverse=False):
         image = Image.new("RGB", (1000, 360), (230, 230, 225))
         draw = ImageDraw.Draw(image)
-        # White strip body with eleven colored pads on a horizontal lattice.
         draw.rectangle((80, 145, 920, 215), fill=(215, 215, 210))
         params = list(ALLOWED_VALUES)
         colors = [CYBOW_11M_STANDARDS[p][0]["rgb"] for p in params]
+        sequence = [(205, 202, 195)] + colors  # compensation + 11 reagents
         if reverse:
-            colors = list(reversed(colors))
-        centers = []
-        for i, color in enumerate(colors):
-            cx = 180 + i * 58
-            centers.append(cx)
+            sequence = list(reversed(sequence))
+        centers = [150 + i * 58 for i in range(12)]
+        for cx, color in zip(centers, sequence):
             draw.rectangle((cx - 18, 163, cx + 18, 197), fill=color)
-        # AI is used only to resolve orientation; intentionally make intermediate boxes bad.
+        reagent_centers = list(reversed(centers[:-1])) if reverse else centers[1:]
         ai = {}
-        ordered = list(reversed(centers)) if reverse else centers
-        for i, param in enumerate(params):
-            cx = ordered[i] / image.width
-            ai[param] = [cx - .02, .44, cx + .02, .56]
+        for param, cx in zip(params, reagent_centers):
+            x = cx / image.width
+            ai[param] = [x - .02, .44, x + .02, .56]
         return image, ai
 
-    def test_detects_11_pad_lattice(self):
+    def test_detects_12_position_lattice(self):
         image, ai = self._synthetic_strip(False)
         result = detect_geometry_regions(image, ai)
         self.assertTrue(result["accepted"], result)

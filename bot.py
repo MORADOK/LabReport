@@ -218,6 +218,15 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
         diagnostics["image_quality"] = quality
         diagnostics["geometry_detection"] = geometry
         diagnostics["region_source"] = geometry.get("source") if geometry.get("accepted") else "ai_fallback"
+        logger.info("geometry_detection %s", json.dumps({
+            "region_source": diagnostics["region_source"],
+            "geometry": geometry,
+            "ai_pad_regions": ai_regions,
+            "sampled_regions": diagnostics.get("sampled_regions"),
+            "detected_rgb": diagnostics.get("detected_rgb"),
+            "normalized_rgb": diagnostics.get("normalized_rgb"),
+            "normalization": diagnostics.get("normalization")
+        }, ensure_ascii=False, allow_nan=False))
         if not diagnostics.get("roi_consistency", {}).get("accepted", True):
             logger.warning("Rejected implausible pad ROIs: %s", diagnostics.get("roi_consistency"))
             raise ValueError("ตำแหน่งช่องทดสอบไม่สอดคล้องกับสีในภาพ กรุณาถ่ายภาพใหม่ให้แถบตรวจชัดและใกล้ขึ้น")

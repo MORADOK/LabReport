@@ -122,7 +122,7 @@ def _best_lattice(axis, image_size):
     for i, a in enumerate(projections):
         for b in projections[i + 1:]:
             delta = b - a
-            for k in range(1, 11):
+            for k in range(1, 12):
                 s = delta / k
                 if 8 <= s <= min(image_size) * 0.18:
                     diffs.append(s)
@@ -138,12 +138,12 @@ def _best_lattice(axis, image_size):
     for spacing in spacing_candidates:
         tolerance = max(4.0, spacing * 0.25)
         for proj in projections:
-            for index in range(11):
+            for index in range(12):
                 start = proj - index * spacing
                 matches = []
                 for p in projections:
                     nearest = round((p - start) / spacing)
-                    if 0 <= nearest <= 10:
+                    if 0 <= nearest <= 11:
                         error = abs(p - (start + nearest * spacing))
                         if error <= tolerance:
                             matches.append((nearest, error))
@@ -165,25 +165,44 @@ def _geometry_centers(axis, lattice):
     ox, oy = axis["origin"]
     ux, uy = axis["u"]
     return [(ox + (lattice["start"] + i * lattice["spacing"]) * ux,
-             oy + (lattice["start"] + i * lattice["spacing"]) * uy) for i in range(11)]
+             oy + (lattice["start"] + i * lattice["spacing"]) * uy) for i in range(12)]
 
 
-def _resolve_direction(centers, ai_regions):
-    if not isinstance(ai_regions, dict):
+def _resolve_reagent_centers(centers, ai_regions):
+    """Resolve lattice phase, compensation end, and semantic direction.
+
+    Low-saturation pads can be absent from color-component detection, so the
+    lattice phase may be one pitch off. AI endpoint proposals are used only
+    to choose among integer-pitch geometry hypotheses.
+    """
+    if not isinstance(ai_regions, dict) or len(centers) != 12:
         return None
-    uro = ai_regions.get("urobilinogen")
-    asc = ai_regions.get("ascorbic_acid")
+    uro, asc = ai_regions.get("urobilinogen"), ai_regions.get("ascorbic_acid")
     if not (isinstance(uro, list) and len(uro) == 4 and isinstance(asc, list) and len(asc) == 4):
         return None
-    ai_uro = _center(uro)
-    ai_asc = _center(asc)
-    # centers are normalized before this helper is called.
-    forward = _dist(centers[0], ai_uro) + _dist(centers[-1], ai_asc)
-    reverse = _dist(centers[-1], ai_uro) + _dist(centers[0], ai_asc)
-    if abs(forward - reverse) < 0.03:
+    ai_uro, ai_asc = _center(uro), _center(asc)
+    dx = centers[1][0] - centers[0][0]
+    dy = centers[1][1] - centers[0][1]
+    ranked = []
+    for shift in range(-2, 3):
+        shifted = [(x + shift * dx, y + shift * dy) for x, y in centers]
+        hypotheses = [
+            (shifted[1:], shifted[0], "compensation_before_forward"),
+            (list(reversed(shifted[:-1])), shifted[-1], "compensation_after_reverse"),
+        ]
+        for reagent, compensation, direction in hypotheses:
+            if any(not (0.005 <= x <= 0.995 and 0.005 <= y <= 0.995) for x, y in shifted):
+                continue
+            error = _dist(reagent[0], ai_uro) + _dist(reagent[-1], ai_asc)
+            ranked.append((error, reagent, compensation, direction, shift))
+    if not ranked:
         return None
-    return "forward" if forward < reverse else "reverse"
-
+    ranked.sort(key=lambda x: x[0])
+    if len(ranked) > 1 and ranked[1][0] - ranked[0][0] < 0.008:
+        return None
+    best = ranked[0]
+    return {"centers": best[1], "compensation_center": best[2],
+            "direction": best[3], "phase_shift": best[4], "endpoint_error": best[0]}
 
 def detect_geometry_regions(image, ai_regions=None):
     components, thumb_size, scale = _candidate_components(image)
@@ -192,7 +211,7 @@ def detect_geometry_regions(image, ai_regions=None):
         return {"accepted": False, "reason": "insufficient aligned color components", "regions": {}}
     lattice = _best_lattice(axis, thumb_size)
     if not lattice or lattice["count"] < 4:
-        return {"accepted": False, "reason": "could not fit 11-pad spacing", "regions": {}}
+        return {"accepted": False, "reason": "could not fit 12-position CYBOW spacing", "regions": {}}
 
     centers_thumb = _geometry_centers(axis, lattice)
     angle = abs(math.degrees(math.atan2(axis["u"][1], axis["u"][0])))
@@ -207,12 +226,12 @@ def detect_geometry_regions(image, ai_regions=None):
     if any(not (0.01 <= x <= 0.99 and 0.01 <= y <= 0.99) for x, y in centers_norm):
         return {"accepted": False, "reason": "fitted pad lattice extends outside image", "regions": {}}
 
-    direction = _resolve_direction(centers_norm, ai_regions)
-    if direction is None:
-        return {"accepted": False, "reason": "strip direction is ambiguous", "regions": {},
+    mapping = _resolve_reagent_centers(centers_norm, ai_regions)
+    if mapping is None:
+        return {"accepted": False, "reason": "strip direction/compensation area is ambiguous", "regions": {},
                 "angle_degrees": round(angle, 1), "matched_components": lattice["count"]}
-    if direction == "reverse":
-        centers_norm = list(reversed(centers_norm))
+    centers_norm = mapping["centers"]
+    direction = mapping["direction"]
 
     spacing_x = lattice["spacing"] * sx / image.width
     spacing_y = lattice["spacing"] * sy / image.height
@@ -235,6 +254,10 @@ def detect_geometry_regions(image, ai_regions=None):
         "regions": regions,
         "source": "pixel_geometry_lattice_v1",
         "direction": direction,
+        "compensation_center": [round(v, 5) for v in mapping["compensation_center"]],
+        "endpoint_error": round(mapping["endpoint_error"], 4),
+        "phase_shift": mapping["phase_shift"],
+        "lattice_positions": 12,
         "angle_degrees": round(angle, 1),
         "matched_components": lattice["count"],
         "spacing_pixels": round(lattice["spacing"] * (sx + sy) / 2.0, 1),
