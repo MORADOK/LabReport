@@ -67,6 +67,18 @@ def parse_clinical_bullets(raw_bullets, sanitize=True):
     """
     try:
         # 0. Handle if already a list
+        # Decode older rows that were JSON-encoded twice before regex recovery.
+        for _ in range(2):
+            if not isinstance(raw_bullets, str):
+                break
+            try:
+                decoded = json.loads(raw_bullets)
+            except (ValueError, TypeError):
+                break
+            if isinstance(decoded, (str, list)):
+                raw_bullets = decoded
+            else:
+                break
         if isinstance(raw_bullets, list):
             if sanitize:
                 return [sanitize_thai_text(str(b)) for b in raw_bullets]
@@ -157,10 +169,10 @@ def load_data():
         cursor.execute("""
             SELECT id, date, notes, urobilinogen, glucose, bilirubin, ketones,
                    specific_gravity, blood, ph, protein, nitrite, leukocytes,
-                   ascorbic_acid, clinical_summary, clinical_bullets
+                   ascorbic_acid, clinical_summary, clinical_bullets,
+                   to_jsonb(records)->'diagnostics' AS diagnostics
             FROM records
             ORDER BY date DESC
-            LIMIT 1000
         """)
 
         # ดึงชื่อคอลัมน์จาก Database

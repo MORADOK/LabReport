@@ -47,9 +47,7 @@ with col1:
     
 with col2:
     st.markdown("### ⚡ สถานะระบบ")
-    st.markdown("<span class='status-badge'>🟢 AI Vision: Online</span>", unsafe_allow_html=True)
-    st.markdown("<br><span class='status-badge'>🟢 LINE Bot: Active</span>", unsafe_allow_html=True)
-    st.markdown("<br><span class='status-badge'>🟢 Database: Connected</span>", unsafe_allow_html=True)
+    st.caption("หน้านี้ยังไม่ได้ตรวจการเชื่อมต่อ AI, LINE หรือฐานข้อมูลแบบเรียลไทม์")
 
 st.divider()
 st.caption("© 2026 LHome Medical Center - Developed with Python & Streamlit")

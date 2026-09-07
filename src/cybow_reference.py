@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-CYBOW 11M Exact Reference Values
-ตารางอ้างอิงค่ามาตรฐานจากแผ่นตรวจ CYBOW 11M (Verified from physical chart)
+CYBOW 11M result classification
+Legacy labels; color descriptions are not instrument calibration data.
 แบ่งระดับความรุนแรงเพื่อให้ AI และ Dashboard ประเมินสถานะได้แม่นยำที่สุด
 """
 
 # ---------------------------------------------------------
-# 🌟 CYBOW 11M EXACT REFERENCE (Verified from physical chart)
+# CYBOW 11M legacy reference labels
 # แบ่งระดับความรุนแรงเพื่อให้ AI และ Dashboard ประเมินสถานะได้แม่นยำที่สุด
 # ---------------------------------------------------------
 
@@ -103,269 +103,57 @@ CYBOW_11M_EXACT_REFERENCE = {
 }
 
 
+from src.standards import ALLOWED_VALUES, CYBOW_11M_STANDARDS, UNVERIFIED_COLOR_PARAMETERS, normalize_value, valid_rgb
+import math
+import re
+
 def get_severity_level(param_code, value):
-    """
-    ประเมินระดับความรุนแรงของค่าที่อ่านได้
-
-    Args:
-        param_code: รหัสพารามิเตอร์ (URO, GLU, BLO, etc.)
-        value: ค่าที่อ่านได้จากแผ่นตรวจ
-
-    Returns:
-        tuple: (severity_level, color, status)
-        - severity_level: "normal", "warning", "critical", "high"
-        - color: สีที่เห็นบนแผ่นตรวจ
-        - status: "Normal", "Positive", "Positive (High)"
-    """
-    if param_code not in CYBOW_11M_EXACT_REFERENCE:
-        return ("normal", "-", "Normal")
-
-    ref = CYBOW_11M_EXACT_REFERENCE[param_code]
-    val = str(value).lower().strip()
-
-    # Handle SG and pH separately (numeric ranges)
-    if param_code == "SG":
+    unknown = ("unknown", "-", "N/A")
+    ref = CYBOW_11M_EXACT_REFERENCE.get(param_code)
+    if not ref or value is None:
+        return unknown
+    val = re.sub(r"\s+", "", str(value).lower())
+    if param_code in ("SG", "pH"):
         try:
-            num = float(val.replace("sg", "").strip())
-            if ref["min_normal"] <= num <= ref["max_normal"]:
-                return ("normal", ref["color"], "Normal")
-            else:
-                return ("warning", ref["color"], "Abnormal")
-        except:
-            return ("normal", ref["color"], "Normal")
-
-    if param_code == "pH":
-        try:
-            num = float(val.replace("ph", "").strip())
-            if num < 7.0:
-                color = ref["color_acidic"]
-            elif num > 7.0:
-                color = ref["color_alkaline"]
-            else:
-                color = ref["color_neutral"]
-
-            if ref["min_normal"] <= num <= ref["max_normal"]:
-                return ("normal", color, "Normal")
-            else:
-                return ("warning", color, "Abnormal")
-        except:
-            return ("normal", ref["color_neutral"], "Normal")
-
-    # Check critical first (highest severity)
-    if "critical" in ref:
-        for critical_val in ref["critical"]:
-            if critical_val.lower() in val or val in critical_val.lower():
-                return ("critical", ref["color_critical"], "Positive (High)")
-
-    # Check warning
-    if "warning" in ref:
-        for warning_val in ref["warning"]:
-            if warning_val.lower() in val or val in warning_val.lower():
-                return ("warning", ref["color_warning"], "Positive")
-
-    # Check high (for parameters without warning/critical distinction)
-    if "high" in ref:
-        for high_val in ref["high"]:
-            if high_val.lower() in val or val in high_val.lower():
-                return ("high", ref["color_high"], "Positive")
-
-    # Check normal
-    if "normal" in ref:
-        for normal_val in ref["normal"]:
-            if normal_val.lower() in val or val in normal_val.lower():
-                return ("normal", ref["color_normal"], "Normal")
-
-    # Default fallback
-    return ("normal", ref.get("color_normal", "-"), "Normal")
-
-
-# =================================================================
-# 🛡️ STRICT VALIDATOR: ระบบบังคับกรอบข้อมูลให้อยู่ในมาตรฐาน CYBOW 11M 100%
-# =================================================================
+            num = float(val)
+            if not math.isfinite(num):
+                return unknown
+        except (TypeError, ValueError):
+            return unknown
+        color = ref["color"] if param_code == "SG" else ref[
+            "color_acidic" if num < 7 else "color_alkaline" if num > 7 else "color_neutral"]
+        normal = ref["min_normal"] <= num <= ref["max_normal"]
+        return ("normal" if normal else "warning", color, "Normal" if normal else "Abnormal")
+    for severity in ("normal", "critical", "warning", "high"):
+        if any(val == re.sub(r"\s+", "", x.lower()) for x in ref.get(severity, [])):
+            return (severity, ref.get("color_" + severity, "-"),
+                    "Normal" if severity == "normal" else "Positive (High)" if severity == "critical" else "Positive")
+    return unknown
 
 def calculate_confidence_from_rgb(detected_rgb, param_code, selected_value):
-    """
-    คำนวณ confidence score จากค่า RGB ที่ตรวจพบเทียบกับค่ามาตรฐาน
-
-    Args:
-        detected_rgb: list [R, G, B] ที่ตรวจพบจากภาพ
-        param_code: รหัสพารามิเตอร์ (urobilinogen, glucose, etc.)
-        selected_value: ค่าที่เลือกได้จากการวิเคราะห์
-
-    Returns:
-        int: confidence score 0-100%
-    """
-    import math
-
-    # Map parameter names
-    param_mapping = {
-        "urobilinogen": "urobilinogen",
-        "glucose": "glucose",
-        "bilirubin": "bilirubin",
-        "ketones": "ketones",
-        "specific_gravity": "specific_gravity",
-        "blood": "blood",
-        "ph": "ph",
-        "protein": "protein",
-        "nitrite": "nitrite",
-        "leukocytes": "leukocytes",
-        "ascorbic_acid": "ascorbic_acid"
-    }
-
-    # Get RGB standards from bot.py CYBOW_11M_STANDARDS
-    # Import here to avoid circular dependency
-    from bot import CYBOW_11M_STANDARDS
-
-    std_param = param_mapping.get(param_code)
-    if not std_param or std_param not in CYBOW_11M_STANDARDS:
-        return 85  # Default confidence if parameter not found
-
-    standards = CYBOW_11M_STANDARDS[std_param]
-
-    # Find the RGB value for the selected result
-    target_rgb = None
-    for level in standards:
-        if level.get("value") == selected_value:
-            target_rgb = level.get("rgb")
-            break
-
-    if not target_rgb or not detected_rgb:
-        return 85  # Default confidence
-
-    # Calculate Euclidean Distance
-    try:
-        r1, g1, b1 = detected_rgb
-        r2, g2, b2 = target_rgb
-        distance = math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2)
-
-        # Convert distance to confidence score (0-100%)
-        # Distance 0 = 100%, Distance 100+ = 0%
-        if distance < 20:
-            confidence = 100 - (distance * 0.5)  # 95-100%
-        elif distance < 40:
-            confidence = 90 - ((distance - 20) * 0.5)  # 85-94%
-        elif distance < 60:
-            confidence = 80 - ((distance - 40) * 0.5)  # 70-84%
-        else:
-            confidence = max(0, 70 - (distance - 60))  # < 70%
-
-        return int(round(confidence))
-
-    except (ValueError, TypeError):
-        return 85  # Fallback
-
+    """Legacy API: uncalibrated color similarity, not probability of correctness."""
+    if not valid_rgb(detected_rgb) or param_code in UNVERIFIED_COLOR_PARAMETERS:
+        return None
+    target = next((x["rgb"] for x in CYBOW_11M_STANDARDS.get(param_code, [])
+                   if x["value"] == selected_value), None)
+    if target is None:
+        return None
+    return round(max(0, min(100, 100 - math.dist(detected_rgb, target))), 1)
 
 def enforce_strict_cybow_standards(ai_raw_data):
-    """
-    ฟังก์ชันนี้จะรับ JSON ที่ AI ตอบมา และทำการ 'บังคับ (Force)'
-    ให้ทุกค่าตรงกับมาตรฐาน CYBOW 11M แบบเป๊ะๆ ทุกตัวอักษร
-    หาก AI พิมพ์ผิด หรือใช้คำอื่น ระบบจะแปลงกลับเป็นค่ามาตรฐานทันที
-
-    Args:
-        ai_raw_data: Dictionary ที่ได้จาก AI response (JSON parsed)
-
-    Returns:
-        Dictionary: ข้อมูลที่ผ่านการ validate แล้ว ค่าทุกตัวตรงมาตรฐาน 100%
-    """
-    import re
-
-    validated_data = {}
-
-    # 1. นิยามกรอบคำตอบที่ถูกต้องที่สุด (Absolute Standard Values)
-    ALLOWED_VALUES = {
-        "urobilinogen": ["0.1 Normal", "1(16)", "2(33)", "4(66)", "8(131)"],
-        "glucose": ["neg.", "±100(5.5)", "+250(14)", "++500(28)", "+++1000(55)"],
-        "bilirubin": ["neg.", "+", "++", "+++"],
-        "ketones": ["neg.", "±5(0.5)", "+15(1.5)", "++40(3.9)", "+++100(10)"],
-        "specific_gravity": ["1.000", "1.005", "1.010", "1.015", "1.020", "1.025", "1.030"],
-        "blood": ["neg.", "Hemolysis +10", "Hemolysis ++50", "Hemolysis +++250", "Non Hemolysis +10", "Non Hemolysis ++50"],
-        "ph": ["5", "6", "6.5", "7", "8", "9"],
-        "protein": ["neg.", "trace", "+30(0.3)", "++100(1.0)", "+++300(3.0)", "++++1000(10)"],
-        "nitrite": ["neg.", "trace", "pos."],
-        "leukocytes": ["neg.", "+25", "++75", "+++500"],
-        "ascorbic_acid": ["neg.", "+20(1.2)", "++40(2.4)"]
-    }
-
-    # 2. ฟังก์ชันช่วยค้นหาค่าที่ใกล้เคียงที่สุด (Fuzzy Matching Logic)
-    def snap_to_standard(param_key, raw_val):
-        val_str = str(raw_val).strip().lower()
-
-        # กฎข้อที่ 1: จัดการกลุ่ม Negative (ถ้ามีคำว่า neg, 0, negative ให้ปรับเป็น "neg." ทันที)
-        if val_str in ["neg", "neg.", "negative", "0", "normal", "none"]:
-            if param_key in ["urobilinogen", "specific_gravity", "ph"]:
-                pass  # ข้ามไป ปล่อยให้เข้าเงื่อนไขด้านล่าง
-            else:
-                return "neg."
-
-        # กฎข้อที่ 1.5: จัดการกลุ่ม Positive สำหรับ nitrite (pos, positive → pos.)
-        if param_key == "nitrite" and val_str in ["pos", "positive"]:
-            return "pos."
-
-        # กฎข้อที่ 1.6: จัดการคำพิเศษ เช่น "trace value" → "trace"
-        if "trace" in val_str:
-            for std_val in ALLOWED_VALUES[param_key]:
-                if std_val.lower() == "trace":
-                    return std_val
-
-        # กฎข้อที่ 2: ค้นหาตัวเลขหลัก (Core Value) จากคำตอบของ AI
-        numbers_in_val = re.findall(r'\d+\.?\d*', val_str)
-
-        # กฎข้อที่ 3: เทียบหาค่าที่ถูกต้องจาก ALLOWED_VALUES
-        for std_val in ALLOWED_VALUES[param_key]:
-            std_lower = std_val.lower()
-
-            # ถ้า AI ตอบมาตรงเป๊ะ
-            if val_str == std_lower:
-                return std_val
-
-            # ถ้า AI ตอบมาแค่เครื่องหมายหรือบางส่วน เช่น "++250" ให้จับคู่กับ "Hemolysis +++250"
-            if len(numbers_in_val) > 0 and numbers_in_val[0] in std_lower:
-                return std_val
-
-        # กฎข้อสุดท้าย: หาก AI หลอนมาแบบหาค่าไม่ได้เลย ให้ส่งค่าปกติกลับไป (Fail-Safe)
-        return ALLOWED_VALUES[param_key][0]
-
-    # 3. วนลูปบังคับค่าทุกพารามิเตอร์ให้อยู่ในกรอบ
-    for param in ALLOWED_VALUES.keys():
-        ai_val = ai_raw_data.get(param, "neg.")
-        validated_data[param] = snap_to_standard(param, ai_val)
-
-    # เก็บค่าดั้งเดิมของสรุปผลคลินิกไว้
-    validated_data["clinical_summary"] = ai_raw_data.get("clinical_summary", "")
-    validated_data["clinical_bullets"] = ai_raw_data.get("clinical_bullets", [])
-    validated_data["reasoning"] = ai_raw_data.get("reasoning", "")
-    validated_data["visual_check"] = ai_raw_data.get("visual_check", "")
-
-    # 4. เก็บข้อมูล RGB detection และคำนวณ confidence scores
-    detected_rgb = ai_raw_data.get("detected_rgb", {})
-    ai_confidence = ai_raw_data.get("confidence_scores", {})
-
-    validated_data["detected_rgb"] = detected_rgb
-    validated_data["confidence_scores"] = {}
-
-    # คำนวณ confidence score ใหม่จากค่า RGB (ถ้า AI ให้มา) หรือใช้ค่าที่ AI ประมาณมา
-    for param in ALLOWED_VALUES.keys():
-        param_rgb = detected_rgb.get(param)
-        selected_value = validated_data.get(param)
-
-        if param_rgb and isinstance(param_rgb, list) and len(param_rgb) == 3:
-            # คำนวณจาก RGB distance
-            confidence = calculate_confidence_from_rgb(param_rgb, param, selected_value)
-        elif param in ai_confidence:
-            # ใช้ค่าที่ AI ประมาณมา (ถ้ามี)
-            confidence = int(ai_confidence[param])
-        else:
-            # Default confidence
-            confidence = 85
-
-        validated_data["confidence_scores"][param] = confidence
-
-    # คำนวณ overall confidence (เฉลี่ย)
-    all_scores = list(validated_data["confidence_scores"].values())
-    if all_scores:
-        overall_confidence = sum(all_scores) / len(all_scores)
-        validated_data["overall_confidence"] = round(overall_confidence, 1)
-    else:
-        validated_data["overall_confidence"] = 85.0
-
-    return validated_data
+    if not isinstance(ai_raw_data, dict):
+        raise ValueError("Analysis response must be a JSON object")
+    data = {p: normalize_value(p, ai_raw_data.get(p)) for p in ALLOWED_VALUES}
+    errors = [p for p, v in data.items() if v is None]
+    data["validation_errors"] = errors
+    data["is_valid"] = not errors
+    data["clinical_summary"] = ai_raw_data.get("clinical_summary") if isinstance(ai_raw_data.get("clinical_summary"), str) else ""
+    bullets = ai_raw_data.get("clinical_bullets")
+    data["clinical_bullets"] = [x for x in bullets if isinstance(x, str)] if isinstance(bullets, list) else []
+    rgb = ai_raw_data.get("detected_rgb")
+    rgb = rgb if isinstance(rgb, dict) else {}
+    data["detected_rgb"] = {p: list(v) for p, v in rgb.items() if p in ALLOWED_VALUES and valid_rgb(v)}
+    data["rgb_source"] = "ai_estimate"
+    data["confidence_scores"] = {p: None for p in ALLOWED_VALUES}
+    data["overall_confidence"] = None
+    return data

@@ -4,10 +4,11 @@ import os
 import pandas as pd
 import re
 from datetime import datetime
-from src.pdf_generator import create_pdf
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
+
+from src.pdf_generator import create_pdf
 
 from src.analysis import load_data, create_trend_chart, parse_clinical_bullets, sanitize_thai_text
 from src.cybow_reference import CYBOW_11M_EXACT_REFERENCE, get_severity_level
@@ -74,72 +75,10 @@ def format_result_value(param_code, raw_val, severity):
     """
     จัดรูปแบบการแสดงผลให้เหมาะสมกับแต่ละพารามิเตอร์
     """
-    val = str(raw_val).strip()
-
-    # For negative results
-    if severity == "normal" and val.lower() in ["neg.", "neg", "negative", "0"]:
-        return "Negative"
-
-    # Special handling for pH
-    if param_code == "pH":
-        try:
-            num = float(re.findall(r'\d+\.?\d*', val)[0])
-            nature = "(Acidic)" if num < 7.0 else "(Alkaline)" if num > 7.0 else "(Neutral)"
-            return f"{num:.1f} {nature}"
-        except:
-            return val
-
-    # Special handling for SG
-    if param_code == "SG":
-        try:
-            num = float(re.findall(r'\d+\.?\d*', val)[0])
-            return f"{num:.3f}"
-        except:
-            return val
-
-    # URO specific formatting
-    if param_code == "URO" and severity == "normal":
-        if "0.1" in val.lower() or "normal" in val.lower():
-            return "0.1 - 1.0"
-        elif "1(16)" in val or "1" in val:
-            return "1.0 (16 µmol/L)"
-
-    # For high values, add descriptive text
-    if param_code == "URO" and severity == "high":
-        return "> 2.0 (High)"
-
-    if param_code == "GLU":
-        if severity == "warning":
-            return f"±100-250 mg/dL" if "100" in val or "±" in val else "+250(14)"
-        elif severity == "critical":
-            return "++500 ถึง +++1000" if "500" in val or "1000" in val else "> 500 mg/dL"
-
-    if param_code == "KET":
-        if severity == "warning":
-            return "±5-15 mg/dL" if "5" in val or "15" in val or "±" in val else "+15(1.5)"
-        elif severity == "critical":
-            return "++40 ถึง +++100" if "40" in val or "100" in val else "> 40 mg/dL"
-
-    if param_code == "BLO":
-        if severity == "warning":
-            return "+ 10 Ery/µL" if "10" in val else "+10"
-        elif severity == "critical":
-            return "++ 50 ถึง +++ 250" if "50" in val or "250" in val or "hemolysis" in val.lower() else "+++250"
-
-    if param_code == "PRO":
-        if severity == "warning":
-            return "15 - 30 mg/dL (Trace/+1)" if "trace" in val.lower() or "15" in val or "30" in val else "+30(0.3)"
-        elif severity == "critical":
-            return "> 100 mg/dL" if "100" in val or "300" in val or "1000" in val else "++100 ถึง ++++1000"
-
-    if param_code == "LEU":
-        if severity == "warning":
-            return "+ 25 Leu/µL"
-        elif severity == "critical":
-            return "++ 75 ถึง +++ 500"
-
-    # Default: return uppercase formatted value
-    return val.upper().replace("±", "+-") if severity != "normal" else val
+    # Preserve the exact recorded level and blood morphology in every report.
+    if severity == "unknown" or raw_val is None:
+        return "N/A"
+    return str(raw_val).strip()
 
 
 # Legacy function - kept for compatibility but redirects to new system
@@ -286,6 +225,16 @@ def prepare_table_data(data):
 def get_data():
     return load_data()
 
+from src.access import require_dashboard_login
+require_dashboard_login(st)
+
+def show_diagnostics(record):
+    diagnostics = record.get('diagnostics')
+    if isinstance(diagnostics, dict) and diagnostics:
+        with st.expander('ข้อมูลสีสำหรับตรวจสอบย้อนหลัง'):
+            st.caption('RGB วัดจากพิกเซลในตำแหน่งที่ AI ระบุ คะแนนเป็นความใกล้เคียงสี ยังไม่ได้สอบเทียบความแม่นยำ')
+            st.json(diagnostics)
+
 with st.spinner("🔄 กำลังโหลดข้อมูล..."):
     df = get_data()
 
@@ -309,7 +258,7 @@ else:
     valid_patients = df[df['notes'].notna() & (df['notes'] != '')]['notes'].unique().tolist()
     total_records = len(df)
     abnormal_blood = len(df[df['blood'].astype(str).str.contains(r'\+|pos|Hemolysis', case=False, na=False)])
-    abnormal_protein = len(df[df['protein'].astype(str).str.contains(r'\+', case=False, na=False)])
+    abnormal_protein = len(df[df['protein'].astype(str).str.contains(r'\+|trace', case=False, na=False)])
 
     st.markdown("### 📊 สถิติภาพรวม")
     col1, col2, col3, col4 = st.columns(4)
@@ -370,6 +319,7 @@ else:
         if selected_rows:
             selected_idx = selected_rows[0]
             target_record = filtered_df.iloc[selected_idx]
+            show_diagnostics(target_record)
             
             st.markdown("---")
             st.markdown(f"#### 📄 เตรียมรายงานของ: **{target_record['notes']}**")
@@ -377,7 +327,7 @@ else:
             with st.spinner("กำลังประกอบไฟล์ PDF..."):
                 try:
                     date_obj = pd.to_datetime(target_record['date'])
-                    case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-{selected_idx:03d}"
+                    case_id = f"CYBOW-{int(target_record['id'])}"
                     table_data = prepare_table_data(target_record)
                     
                     # 🌟 Robust JSON parsing with Unicode escape handling + Text sanitization
@@ -423,6 +373,7 @@ else:
                 st.caption(f"🕐 ตรวจล่าสุด: {latest_date} | 📊 มี {len(patient_df)} ครั้ง")
 
             latest = patient_df.iloc[0]
+            show_diagnostics(latest)
             st.markdown("#### 🔬 ผลตรวจล่าสุด")
             col_r1, col_r2, col_r3, col_r4 = st.columns(4)
             with col_r1: st.info(f"**🍬 Glucose**\n\n{latest['glucose']}")
@@ -453,7 +404,7 @@ else:
             with col_d2:
                 try:
                     date_obj = pd.to_datetime(latest['date'])
-                    case_id = f"CYBOW-{date_obj.strftime('%Y%m%d')}-001"
+                    case_id = f"CYBOW-{int(latest['id'])}"
                     table_data = prepare_table_data(latest)
                     
                     # 🌟 Robust JSON parsing with Unicode escape handling + Text sanitization

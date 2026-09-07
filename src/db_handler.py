@@ -24,67 +24,28 @@ def force_ipv4_dns(hostname):
     return hostname  # Fallback to original hostname
 
 def get_connection(retries=3, retry_delay=2):
-    """ฟังก์ชันจัดการ Connection ไปยัง PostgreSQL (แก้ปัญหา IPv6 + Retry Logic)"""
-    if not DATABASE_URL:
-        raise ValueError("[Error] DATABASE_URL not found in .env file")
-
-    # Debug: ตรวจสอบว่า DATABASE_URL มีรูปแบบถูกต้องหรือไม่
-    if DATABASE_URL.startswith('DATABASE_URL='):
-        raise ValueError(f"[Error] DATABASE_URL format is incorrect. Remove 'DATABASE_URL=' prefix. Current value: {DATABASE_URL[:80]}")
-
-    last_error = None
+    """Preserve DSN escaping, TLS settings and other libpq connection options."""
+    if not DATABASE_URL or DATABASE_URL.startswith("DATABASE_URL="):
+        raise ValueError("DATABASE_URL is missing or malformed")
+    if retries < 1:
+        raise ValueError("retries must be positive")
+    parsed = urlparse(DATABASE_URL)
+    if parsed.scheme not in ("postgres", "postgresql") or not parsed.hostname:
+        raise ValueError("DATABASE_URL must be a PostgreSQL URL")
     for attempt in range(retries):
         try:
-            # Parse URL
-            parsed = urlparse(DATABASE_URL)
+            # libpq parses percent-encoded credentials and honors sslmode in the URL.
+            return psycopg2.connect(DATABASE_URL, connect_timeout=15)
+        except psycopg2.OperationalError as error:
+            if attempt + 1 == retries:
+                raise ConnectionError("Database connection failed") from error
+            time.sleep(retry_delay)
 
-            # Validate parsed URL
-            if not parsed.hostname:
-                raise ValueError(f"[Error] Invalid DATABASE_URL - hostname is None. URL format should be 'postgresql://user:pass@host:port/db'. Current: {DATABASE_URL[:80]}")
-
-            # ตรวจสอบว่าใช้ pooler หรือไม่ (ต้องใช้ hostname เพื่อ SNI)
-            is_pooler = 'pooler' in parsed.hostname
-
-            if is_pooler:
-                # Pooler: ต้องใช้ hostname สำหรับ SNI (ไม่ resolve เป็น IP)
-                host = parsed.hostname
-                print(f"[Pooler] Using hostname {host} for SNI support")
-            else:
-                # Direct connection: ใช้ IPv4 address
-                host = force_ipv4_dns(parsed.hostname)
-                print(f"[DNS] Resolved {parsed.hostname} to {host}")
-
-            # สร้าง connection แบบใช้พารามิเตอร์แยกเพื่อควบคุม connection ได้ดีกว่า
-            conn = psycopg2.connect(
-                host=host,
-                port=parsed.port or 5432,
-                user=parsed.username,
-                password=parsed.password,
-                database=parsed.path.lstrip('/').split('?')[0],  # Remove query params
-                connect_timeout=15,
-                keepalives=1,
-                keepalives_idle=30,
-                keepalives_interval=10,
-                keepalives_count=5,
-                sslmode='require' if is_pooler else 'prefer'
-            )
-            return conn
-        except (psycopg2.OperationalError, Exception) as e:
-            last_error = e
-            if attempt < retries - 1:
-                print(f"[Retry {attempt + 1}/{retries}] Connection failed, retrying in {retry_delay}s...")
-                time.sleep(retry_delay)
-            else:
-                # Fallback: ลองใช้ connection string ปกติ
-                try:
-                    print(f"[Fallback] Trying direct connection string...")
-                    return psycopg2.connect(DATABASE_URL, connect_timeout=15)
-                except Exception as fallback_error:
-                    raise ConnectionError(f"[Connection Failed] All connection attempts failed. Last error: {last_error}")
 
 def init_db():
     """สร้างตารางและอัปเดตโครงสร้างอัตโนมัติ (Auto Migration)"""
     conn = None
+    cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -139,66 +100,59 @@ def init_db():
             print("[Auto Migration] Adding 'clinical_bullets' column...")
             cursor.execute("ALTER TABLE records ADD COLUMN clinical_bullets TEXT DEFAULT '[]'")
 
-        # 5. Enable Row Level Security (RLS) for security compliance
-        cursor.execute('''
-            SELECT relrowsecurity
-            FROM pg_class
-            WHERE relname = 'records' AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public');
-        ''')
-        rls_result = cursor.fetchone()
-        if rls_result and not rls_result[0]:
-            print("[Security] Enabling Row Level Security on records table...")
-            cursor.execute("ALTER TABLE public.records ENABLE ROW LEVEL SECURITY")
-
-            # Drop existing policies to avoid conflicts
-            cursor.execute("DROP POLICY IF EXISTS \"Service role full access\" ON public.records")
-
-            # Create policy for service role access
-            cursor.execute('''
-                CREATE POLICY "Service role full access"
-                ON public.records
-                FOR ALL
-                USING (true)
-                WITH CHECK (true)
-            ''')
-            print("[Security] RLS enabled and policies created successfully!")
-        elif rls_result and rls_result[0]:
-            print("[Security] RLS already enabled on records table")
-
+        cursor.execute("ALTER TABLE public.records ADD COLUMN IF NOT EXISTS diagnostics JSONB")
+        cursor.execute("ALTER TABLE public.records ENABLE ROW LEVEL SECURITY")
+        # Repair the legacy permissive policy even when RLS was already enabled.
+        cursor.execute('DROP POLICY IF EXISTS "Service role full access" ON public.records')
+        cursor.execute("""
+            CREATE POLICY "Service role full access" ON public.records
+            FOR ALL TO service_role USING (true) WITH CHECK (true)
+        """)
         conn.commit()
         print("[Success] Database structure updated and secured!")
 
     except Exception as e:
-        print(f"[DB Error] Database setup failed: {e}")
-    finally:
         if conn:
+            conn.rollback()
+        raise RuntimeError("Database migration failed") from e
+    finally:
+        if cursor:
             cursor.close()
+        if conn:
             conn.close()
 
-def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes="", clinical_summary="", clinical_bullets=[]):
+def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes="", clinical_summary="", clinical_bullets=None, diagnostics=None):
     """ฟังก์ชันบันทึกผลตรวจลง Database พร้อม clinical analysis"""
     conn = None
+    cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
 
         # แปลง list ของ clinical_bullets เป็น JSON string
         import json
+        if isinstance(clinical_bullets, str):
+            clinical_bullets = json.loads(clinical_bullets)
+        if clinical_bullets is None:
+            clinical_bullets = []
+        if not isinstance(clinical_bullets, list):
+            raise ValueError("clinical_bullets must be a list")
         bullets_json = json.dumps(clinical_bullets, ensure_ascii=False)
+        diagnostics_json = json.dumps(diagnostics or {}, ensure_ascii=False, allow_nan=False)
 
         # PostgreSQL ใช้ %s ในการส่งค่าตัวแปร
         query = '''
             INSERT INTO records (
                 date, urobilinogen, glucose, bilirubin, ketones,
                 specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes,
-                clinical_summary, clinical_bullets
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                clinical_summary, clinical_bullets, diagnostics
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         '''
 
         values = (
             date, urobilinogen, glucose, bilirubin, ketones,
             specific_gravity, blood, ph, protein, nitrite, leukocytes, ascorbic_acid, notes,
-            clinical_summary, bullets_json
+            clinical_summary, bullets_json, diagnostics_json
         )
 
         cursor.execute(query, values)
@@ -208,9 +162,11 @@ def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_grav
         print(f"[Insert Error] Failed to insert record: {e}")
         return False
     finally:
-        if conn:
+        if cursor:
             cursor.close()
+        if conn:
             conn.close()
 
-# ตรวจสอบและสร้างฐานข้อมูลทันทีเมื่อไฟล์ถูกเรียกใช้
-init_db()
+# Run explicitly during deployment: python -m src.db_handler
+if __name__ == "__main__":
+    init_db()

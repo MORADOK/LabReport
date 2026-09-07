@@ -189,7 +189,10 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
         if "Normal" in status_text:
             pdf.set_fill_color(22, 163, 74)  # เขียวเข้มขึ้น (Green 600)
             badge_text = "Normal"
-        elif "Trace" in status_text or "Small" in status_text or "Mod" in status_text:
+        elif status_text == "N/A":
+            pdf.set_fill_color(100, 116, 139)
+            badge_text = "N/A"
+        elif status_text in ("Positive", "Abnormal") or "Trace" in status_text or "Small" in status_text or "Mod" in status_text:
             pdf.set_fill_color(234, 88, 12) # ส้มเข้มขึ้น (Orange 600)
             badge_text = "Positive"
         else:
