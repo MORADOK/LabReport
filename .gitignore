@@ -63,3 +63,6 @@ test_output*.pdf
 *_old.*
 *_backup.*
 *.bak
+
+# Local patch backups
+*.bak-*

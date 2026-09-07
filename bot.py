@@ -159,11 +159,10 @@ def process_image_with_ai(image_id, user_id, patient_name):
                 text="กรุณาถ่ายภาพใหม่: " + ", ".join(quality["reasons"])))
             return
         system_prompt = """
-Read a CYBOW 11M urine strip only when the photo includes its matching manufacturer
-color chart and both strip orientation and every pad can be identified.
-Compare each pad with the chart visible in the photo; do not invent RGB references.
-If the chart is absent, the image is ambiguous, or a result cannot be read, return null
-for that result. Never replace unknown results with negative.
+Read a CYBOW 11M urine reagent strip. The photo MAY contain only the test strip; a manufacturer color chart is NOT required in the same photo.
+First identify the strip orientation and all 11 reagent pads. Use your learned visual knowledge of the CYBOW 11M manufacturer scale to classify each pad only when the pad is clearly visible.
+Do not require a chart to be visible. Do not reject a strip-only photo merely because the chart is absent.
+If the strip is too small, blurred, overexposed, the orientation is uncertain, fewer than 11 pads can be located, or a particular result cannot be read reliably, return null for that result. Never replace unknown results with negative.
 Return a single JSON object using these result keys and allowed labels:
 """ + json.dumps(ALLOWED_VALUES, ensure_ascii=False) + """
 Also return pad_regions: a dictionary keyed by the same parameter names, each value
@@ -180,7 +179,7 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Read the strip against the chart in this photo. Return only the JSON requested by the system."},
+                        {"type": "text", "text": "Read this CYBOW 11M strip. A color chart may be absent; analyze a strip-only photo when all 11 pads are clearly identifiable. Return only the JSON requested by the system."},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
@@ -206,14 +205,14 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
         data = enforce_strict_cybow_standards(raw_data)
         if not data["is_valid"]:
             line_bot_api.push_message(user_id, TextSendMessage(
-                text="ยังบันทึกผลไม่ได้ กรุณาถ่ายแผ่นตรวจพร้อมตารางสีอ้างอิงให้ชัดเจน ช่องที่อ่านไม่ได้: "
+                text="ยังบันทึกผลไม่ได้ กรุณาถ่ายแผ่น CYBOW 11M ให้เต็มภาพ แสงสม่ำเสมอ และเห็นแถบสีทั้ง 11 ช่องชัดเจน ช่องที่อ่านไม่ได้: "
                      + ", ".join(data["validation_errors"])))
             return
         diagnostics = sample_regions(image, raw_data.get("pad_regions"), data)
         diagnostics["image_quality"] = quality
         if len(diagnostics["detected_rgb"]) != len(ALLOWED_VALUES):
             line_bot_api.push_message(user_id, TextSendMessage(
-                text="ระบุตำแหน่งแถบสีได้ไม่ครบ กรุณาถ่ายภาพใหม่พร้อมตารางสีอ้างอิง"))
+                text="ระบุตำแหน่งแถบสีได้ไม่ครบ กรุณาถ่ายแผ่น CYBOW 11M ให้ใกล้ขึ้น เห็นครบทั้ง 11 ช่อง และหลีกเลี่ยงแสงสะท้อน"))
             return
         data.update(diagnostics)
         # Build the summary from validated labels so it cannot contradict the saved values.
