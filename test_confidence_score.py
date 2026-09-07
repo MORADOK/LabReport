@@ -7,14 +7,25 @@ from src.standards import valid_rgb
 
 class ImageTests(unittest.TestCase):
     def test_perfect_color_and_invalid_inputs(self):
-        self.assertEqual(similarity([118,194,201], "glucose", "neg."), 100)
+        self.assertEqual(similarity([92,151,185], "glucose", "neg."), 100)
         for rgb in (None, [], [1,2,"3"], [0,0,float("nan")], [-1,2,3], [True,2,3], [256,2,3]):
             self.assertFalse(valid_rgb(rgb))
             self.assertIsNone(similarity(rgb, "glucose", "neg."))
 
     def test_conflicting_references_disabled(self):
-        for param in ("blood", "ascorbic_acid", "specific_gravity"):
+        for param in ("blood",):
             self.assertIsNone(similarity([100,100,100], param, "neg."))
+
+    def test_ref0974_calibration_key_colors(self):
+        from src.standards import CYBOW_11M_STANDARDS, CALIBRATION_SOURCE
+        self.assertIn("REF 0974", CALIBRATION_SOURCE)
+        def rgb(param, value):
+            return next(x["rgb"] for x in CYBOW_11M_STANDARDS[param] if x["value"] == value)
+        self.assertEqual(rgb("blood", "neg."), (190,179,38))
+        self.assertEqual(rgb("specific_gravity", "1.000"), (16,53,79))
+        self.assertEqual(rgb("specific_gravity", "1.030"), (169,130,52))
+        self.assertEqual(rgb("ascorbic_acid", "neg."), (29,97,102))
+        self.assertEqual(rgb("ascorbic_acid", "++40(2.4)"), (173,167,30))
 
     def test_similarity_bounds(self):
         for n in range(256):
@@ -22,9 +33,9 @@ class ImageTests(unittest.TestCase):
             self.assertTrue(0 <= score <= 100)
 
     def test_pixels_are_sampled(self):
-        image = Image.new("RGB", (200,200), (118,194,201))
+        image = Image.new("RGB", (200,200), (92,151,185))
         result = sample_regions(image, {"glucose":[.1,.1,.4,.4]}, {"glucose":"neg."})
-        self.assertEqual(result["detected_rgb"]["glucose"], [118,194,201])
+        self.assertEqual(result["detected_rgb"]["glucose"], [92,151,185])
         self.assertEqual(result["color_similarity_scores"]["glucose"], 100)
 
     def test_invalid_and_overlapping_regions(self):

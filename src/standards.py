@@ -4,80 +4,80 @@ import re
 
 CYBOW_11M_STANDARDS = {
     "urobilinogen": [
-        {"label": "0.1 (Normal)", "rgb": (251, 226, 212), "value": "0.1 Normal"},
-        {"label": "1 (16)", "rgb": (250, 187, 186), "value": "1(16)"},
-        {"label": "2 (33)", "rgb": (244, 151, 158), "value": "2(33)"},
-        {"label": "4 (66)", "rgb": (233, 114, 137), "value": "4(66)"},
-        {"label": "8 (131)", "rgb": (222, 77, 115), "value": "8(131)"}
+        {"label": "0.1 (Normal)", "rgb": (195, 185, 158), "value": "0.1 Normal"},
+        {"label": "1 (16)", "rgb": (187, 172, 167), "value": "1(16)"},
+        {"label": "2 (33)", "rgb": (191, 161, 153), "value": "2(33)"},
+        {"label": "4 (66)", "rgb": (194, 138, 139), "value": "4(66)"},
+        {"label": "8 (131)", "rgb": (188, 105, 120), "value": "8(131)"}
     ],
     "glucose": [
-        {"label": "neg", "rgb": (118, 194, 201), "value": "neg."},
-        {"label": "± 100", "rgb": (148, 199, 126), "value": "±100(5.5)"},
-        {"label": "+ 250", "rgb": (137, 168, 64), "value": "+250(14)"},
-        {"label": "++ 500", "rgb": (120, 111, 48), "value": "++500(28)"},
-        {"label": "+++ 1000", "rgb": (99, 61, 43), "value": "+++1000(55)"}
+        {"label": "neg", "rgb": (92, 151, 185), "value": "neg."},
+        {"label": "± 100", "rgb": (119, 163, 112), "value": "±100(5.5)"},
+        {"label": "+ 250", "rgb": (127, 124, 57), "value": "+250(14)"},
+        {"label": "++ 500", "rgb": (121, 94, 65), "value": "++500(28)"},
+        {"label": "+++ 1000", "rgb": (95, 55, 47), "value": "+++1000(55)"}
     ],
     "bilirubin": [
-        {"label": "neg", "rgb": (242, 222, 210), "value": "neg."},
-        {"label": "+", "rgb": (233, 190, 197), "value": "+"},
-        {"label": "++", "rgb": (214, 145, 172), "value": "++"},
-        {"label": "+++", "rgb": (163, 76, 122), "value": "+++"}
+        {"label": "neg", "rgb": (193, 177, 151), "value": "neg."},
+        {"label": "+", "rgb": (188, 161, 141), "value": "+"},
+        {"label": "++", "rgb": (177, 156, 140), "value": "++"},
+        {"label": "+++", "rgb": (171, 137, 136), "value": "+++"}
     ],
     "ketones": [
-        {"label": "neg", "rgb": (242, 222, 210), "value": "neg."},
-        {"label": "± 5", "rgb": (233, 190, 197), "value": "±5(0.5)"},
-        {"label": "+ 15", "rgb": (214, 145, 172), "value": "+15(1.5)"},
-        {"label": "++ 40", "rgb": (163, 76, 122), "value": "++40(3.9)"},
-        {"label": "+++ 100", "rgb": (112, 43, 75), "value": "+++100(10)"}
+        {"label": "neg", "rgb": (185, 168, 156), "value": "neg."},
+        {"label": "± 5", "rgb": (177, 155, 152), "value": "±5(0.5)"},
+        {"label": "+ 15", "rgb": (177, 144, 151), "value": "+15(1.5)"},
+        {"label": "++ 40", "rgb": (147, 90, 122), "value": "++40(3.9)"},
+        {"label": "+++ 100", "rgb": (103, 54, 73), "value": "+++100(10)"}
     ],
     "ph": [
-        {"label": "5.0", "rgb": (236, 136, 75), "value": "5"},
-        {"label": "6.0", "rgb": (238, 179, 74), "value": "6"},
-        {"label": "6.5", "rgb": (207, 189, 64), "value": "6.5"},
-        {"label": "7.0", "rgb": (153, 173, 56), "value": "7"},
-        {"label": "8.0", "rgb": (59, 131, 101), "value": "8"},
-        {"label": "9.0", "rgb": (49, 102, 133), "value": "9"}
+        {"label": "5.0", "rgb": (183, 122, 77), "value": "5"},
+        {"label": "6.0", "rgb": (188, 146, 65), "value": "6"},
+        {"label": "6.5", "rgb": (168, 144, 75), "value": "6.5"},
+        {"label": "7.0", "rgb": (141, 149, 63), "value": "7"},
+        {"label": "8.0", "rgb": (52, 102, 65), "value": "8"},
+        {"label": "9.0", "rgb": (50, 90, 115), "value": "9"}
     ],
     "protein": [
-        {"label": "neg", "rgb": (237, 227, 85), "value": "neg."},
-        {"label": "trace", "rgb": (204, 216, 92), "value": "trace"},
-        {"label": "+ 30", "rgb": (166, 198, 89), "value": "+30(0.3)"},
-        {"label": "++ 100", "rgb": (123, 179, 90), "value": "++100(1.0)"},
-        {"label": "+++ 300", "rgb": (85, 160, 93), "value": "+++300(3.0)"},
-        {"label": "++++ 1000", "rgb": (70, 140, 115), "value": "++++1000(10)"}
+        {"label": "neg", "rgb": (179, 172, 81), "value": "neg."},
+        {"label": "trace", "rgb": (166, 167, 108), "value": "trace"},
+        {"label": "+ 30", "rgb": (161, 168, 88), "value": "+30(0.3)"},
+        {"label": "++ 100", "rgb": (138, 160, 81), "value": "++100(1.0)"},
+        {"label": "+++ 300", "rgb": (120, 148, 97), "value": "+++300(3.0)"},
+        {"label": "++++ 1000", "rgb": (103, 139, 111), "value": "++++1000(10)"}
     ],
     "blood": [
-        {"label": "neg", "rgb": (245, 245, 245), "value": "neg."},
-        {"label": "Hemolysis +10 Ery/µL", "rgb": (148, 199, 126), "value": "Hemolysis +10"},
-        {"label": "Hemolysis ++50 Ery/µL", "rgb": (120, 111, 48), "value": "Hemolysis ++50"},
-        {"label": "Hemolysis +++250 Ery/µL", "rgb": (99, 61, 43), "value": "Hemolysis +++250"},
-        {"label": "Non-Hemolysis +10", "rgb": (148, 199, 126), "value": "Non Hemolysis +10"},
-        {"label": "Non-Hemolysis ++50", "rgb": (120, 111, 48), "value": "Non Hemolysis ++50"}
+        {"label": "neg", "rgb": (190, 179, 38), "value": "neg."},
+        {"label": "Hemolysis +10 Ery/µL", "rgb": (141, 166, 74), "value": "Hemolysis +10"},
+        {"label": "Hemolysis ++50 Ery/µL", "rgb": (80, 133, 74), "value": "Hemolysis ++50"},
+        {"label": "Hemolysis +++250 Ery/µL", "rgb": (34, 74, 100), "value": "Hemolysis +++250"},
+        {"label": "Non-Hemolysis +10", "rgb": (191, 177, 123), "value": "Non Hemolysis +10"},
+        {"label": "Non-Hemolysis ++50", "rgb": (171, 169, 113), "value": "Non Hemolysis ++50"}
     ],
     "nitrite": [
-        {"label": "neg", "rgb": (245, 240, 235), "value": "neg."},
-        {"label": "trace", "rgb": (234, 210, 215), "value": "trace"},
-        {"label": "pos", "rgb": (220, 180, 195), "value": "pos."}
+        {"label": "neg", "rgb": (190, 182, 159), "value": "neg."},
+        {"label": "trace", "rgb": (180, 156, 170), "value": "trace"},
+        {"label": "pos", "rgb": (155, 59, 113), "value": "pos."}
     ],
     "leukocytes": [
-        {"label": "neg", "rgb": (240, 230, 235), "value": "neg."},
-        {"label": "+25 Leu/µL", "rgb": (225, 205, 220), "value": "+25"},
-        {"label": "++75 Leu/µL", "rgb": (200, 170, 200), "value": "++75"},
-        {"label": "+++500 Leu/µL", "rgb": (175, 140, 180), "value": "+++500"}
+        {"label": "neg", "rgb": (185, 169, 155), "value": "neg."},
+        {"label": "+25 Leu/µL", "rgb": (184, 158, 143), "value": "+25"},
+        {"label": "++75 Leu/µL", "rgb": (180, 154, 165), "value": "++75"},
+        {"label": "+++500 Leu/µL", "rgb": (142, 103, 140), "value": "+++500"}
     ],
     "ascorbic_acid": [
-        {"label": "neg", "rgb": (230, 235, 210), "value": "neg."},
-        {"label": "+20 mg/dL", "rgb": (210, 215, 185), "value": "+20(1.2)"},
-        {"label": "++40 mg/dL", "rgb": (190, 195, 160), "value": "++40(2.4)"}
+        {"label": "neg", "rgb": (29, 97, 102), "value": "neg."},
+        {"label": "+20 mg/dL", "rgb": (90, 142, 62), "value": "+20(1.2)"},
+        {"label": "++40 mg/dL", "rgb": (173, 167, 30), "value": "++40(2.4)"}
     ],
     "specific_gravity": [
-        {"label": "1.000", "rgb": (180, 200, 180), "value": "1.000"},
-        {"label": "1.005", "rgb": (175, 195, 175), "value": "1.005"},
-        {"label": "1.010", "rgb": (170, 190, 170), "value": "1.010"},
-        {"label": "1.015", "rgb": (165, 185, 165), "value": "1.015"},
-        {"label": "1.020", "rgb": (160, 180, 160), "value": "1.020"},
-        {"label": "1.025", "rgb": (155, 175, 155), "value": "1.025"},
-        {"label": "1.030", "rgb": (150, 170, 150), "value": "1.030"}
+        {"label": "1.000", "rgb": (16, 53, 79), "value": "1.000"},
+        {"label": "1.005", "rgb": (40, 66, 67), "value": "1.005"},
+        {"label": "1.010", "rgb": (75, 88, 68), "value": "1.010"},
+        {"label": "1.015", "rgb": (93, 102, 57), "value": "1.015"},
+        {"label": "1.020", "rgb": (120, 116, 52), "value": "1.020"},
+        {"label": "1.025", "rgb": (144, 123, 56), "value": "1.025"},
+        {"label": "1.030", "rgb": (169, 130, 52), "value": "1.030"}
     ]
 }
 
@@ -94,8 +94,10 @@ ALLOWED_VALUES = {
     "leukocytes": ["neg.", "+25", "++75", "+++500"],
     "ascorbic_acid": ["neg.", "+20(1.2)", "++40(2.4)"]
 }
-# Conflicting legacy RGB references must not produce similarity scores.
-UNVERIFIED_COLOR_PARAMETERS = {"blood", "ascorbic_acid", "specific_gravity"}
+# Reference colors measured from the user-supplied CYBOW 11M REF 0974 chart photo (2026-09-08).
+# These are photo-specific RGB values, not instrument-certified absolute color coordinates.
+CALIBRATION_SOURCE = "CYBOW 11M REF 0974 reference-chart photo, measured center patches"
+UNVERIFIED_COLOR_PARAMETERS = {"blood"}  # Non-hemolysis blood uses a spotted pattern, not a single flat color.
 
 def valid_rgb(value):
     return (isinstance(value, (list, tuple)) and len(value) == 3
