@@ -130,7 +130,42 @@ def _linear_fit(points):
     return intercept, slope, (sum(residuals) / len(residuals))
 
 
-def _best_lattice(axis, image_size):
+def _ai_spacing_prior(ai_regions, axis, image, thumb_size):
+    if not isinstance(ai_regions, dict):
+        return None
+    ox, oy = axis["origin"]
+    ux, uy = axis["u"]
+    tw, th = thumb_size
+    projections = []
+    for param in PARAMETERS:
+        box = ai_regions.get(param)
+        if not (isinstance(box, list) and len(box) == 4):
+            continue
+        cx, cy = _center(box)
+        px, py = cx * tw, cy * th
+        projections.append((px - ox) * ux + (py - oy) * uy)
+    if len(projections) < 5:
+        return None
+    diffs = [abs(b-a) for a,b in zip(projections, projections[1:]) if abs(b-a) > 1]
+    if len(diffs) < 4:
+        return None
+    return median(diffs)
+
+
+def _semantic_ai_error(centers, ai_regions):
+    if not isinstance(ai_regions, dict):
+        return None
+    errors = []
+    for param, center in zip(PARAMETERS, centers):
+        box = ai_regions.get(param)
+        if isinstance(box, list) and len(box) == 4:
+            errors.append(_dist(center, _center(box)))
+    if len(errors) < 5:
+        return None
+    return sum(errors) / len(errors)
+
+
+def _best_lattice(axis, image_size, expected_spacing=None):
     inliers = sorted(axis["inliers"], key=lambda item: item[0])
     projections = [x[0] for x in inliers]
     if len(projections) < 4:
@@ -149,7 +184,11 @@ def _best_lattice(axis, image_size):
     for s in diffs:
         key = round(s / 2.0) * 2.0
         buckets[key] = buckets.get(key, 0) + 1
-    spacing_candidates = [k for k, _ in sorted(buckets.items(), key=lambda kv: kv[1], reverse=True)[:20]]
+    spacing_candidates = [k for k, _ in sorted(buckets.items(), key=lambda kv: kv[1], reverse=True)[:30]]
+    if expected_spacing is not None and expected_spacing > 0:
+        plausible = [s for s in spacing_candidates if 0.72 <= s / expected_spacing <= 1.35]
+        if plausible:
+            spacing_candidates = plausible
     best = None
     for spacing in spacing_candidates:
         tolerance = max(4.0, spacing * 0.25)
@@ -167,7 +206,10 @@ def _best_lattice(axis, image_size):
                 if count < 4:
                     continue
                 residual = sum(v[0] for v in unique.values()) / count
-                score = count * 100 - residual * 3
+                prior_penalty = 0.0
+                if expected_spacing is not None and expected_spacing > 0:
+                    prior_penalty = abs(math.log(max(spacing, 1e-6) / expected_spacing)) * 180.0
+                score = count * 100 - residual * 3 - prior_penalty
                 if best is None or score > best["score"]:
                     best = {"start": start, "spacing": spacing, "matches": unique,
                             "count": count, "residual": residual, "score": score}
@@ -275,12 +317,6 @@ def _resolve_reagent_centers(image, centers, ai_regions):
     if spacing_norm <= 0:
         return None
 
-    ai_uro = ai_asc = None
-    if isinstance(ai_regions, dict):
-        uro, asc = ai_regions.get("urobilinogen"), ai_regions.get("ascorbic_acid")
-        if isinstance(uro, list) and len(uro) == 4 and isinstance(asc, list) and len(asc) == 4:
-            ai_uro, ai_asc = _center(uro), _center(asc)
-
     ranked = []
     for shift in range(-2, 3):
         shifted = [(x + shift * dx, y + shift * dy) for x, y in centers]
@@ -295,14 +331,20 @@ def _resolve_reagent_centers(image, centers, ai_regions):
         for reagent, compensation, direction, handle_score, opposite_score in hypotheses:
             handle_margin = handle_score - opposite_score
             objective = handle_margin * 4.0 + handle_score
+            semantic_error = _semantic_ai_error(reagent, ai_regions)
             endpoint_error = None
-            if ai_uro is not None and ai_asc is not None:
-                endpoint_error = _dist(reagent[0], ai_uro) + _dist(reagent[-1], ai_asc)
+            uro = ai_regions.get("urobilinogen") if isinstance(ai_regions, dict) else None
+            asc = ai_regions.get("ascorbic_acid") if isinstance(ai_regions, dict) else None
+            if isinstance(uro, list) and len(uro) == 4 and isinstance(asc, list) and len(asc) == 4:
+                endpoint_error = _dist(reagent[0], _center(uro)) + _dist(reagent[-1], _center(asc))
+            if semantic_error is not None:
+                objective -= semantic_error * 14.0
+            elif endpoint_error is not None:
                 objective -= endpoint_error * 4.0
             ranked.append({"objective": objective, "reagent": reagent, "compensation": compensation,
                            "direction": direction, "shift": shift, "handle_score": handle_score,
                            "opposite_handle_score": opposite_score, "handle_margin": handle_margin,
-                           "endpoint_error": endpoint_error})
+                           "endpoint_error": endpoint_error, "semantic_error": semantic_error})
     if not ranked:
         return None
     ranked.sort(key=lambda x: x["objective"], reverse=True)
@@ -310,7 +352,8 @@ def _resolve_reagent_centers(image, centers, ai_regions):
     second = ranked[1] if len(ranked) > 1 else None
     objective_gap = best["objective"] - second["objective"] if second else 999.0
     handle_clear = best["handle_margin"] >= 0.055
-    combined_clear = objective_gap >= 0.035 and best["handle_score"] >= 0.45
+    semantic_good = best.get("semantic_error") is not None and best["semantic_error"] <= 0.055
+    combined_clear = objective_gap >= 0.035 and best["handle_score"] >= 0.45 and semantic_good
     if not (handle_clear or combined_clear):
         return None
     return {"centers": best["reagent"], "compensation_center": best["compensation"],
@@ -318,7 +361,8 @@ def _resolve_reagent_centers(image, centers, ai_regions):
             "endpoint_error": best["endpoint_error"], "handle_score": best["handle_score"],
             "opposite_handle_score": best["opposite_handle_score"],
             "handle_margin": best["handle_margin"], "orientation_objective_gap": objective_gap,
-            "orientation_source": "physical_handle" if handle_clear else "handle_plus_ai"}
+            "orientation_source": "physical_handle" if handle_clear else "handle_plus_ai",
+            "semantic_ai_error": best.get("semantic_error")}
 
 
 def detect_geometry_regions(image, ai_regions=None):
@@ -326,7 +370,8 @@ def detect_geometry_regions(image, ai_regions=None):
     axis = _best_axis(components)
     if not axis:
         return {"accepted": False, "reason": "insufficient aligned color components", "regions": {}}
-    lattice = _best_lattice(axis, thumb_size)
+    expected_spacing = _ai_spacing_prior(ai_regions, axis, image, thumb_size)
+    lattice = _best_lattice(axis, thumb_size, expected_spacing)
     if not lattice or lattice["count"] < 4:
         return {"accepted": False, "reason": "could not fit 12-position CYBOW spacing", "regions": {}}
 
@@ -355,6 +400,15 @@ def detect_geometry_regions(image, ai_regions=None):
     residual_px = lattice.get("fit_residual", lattice["residual"]) * (sx + sy) / 2.0
     spacing_px = lattice["spacing"] * (sx + sy) / 2.0
     residual_ratio = residual_px / max(spacing_px, 1.0)
+    ai_spacing_ratio = None
+    if expected_spacing is not None and expected_spacing > 0:
+        ai_spacing_ratio = lattice["spacing"] / expected_spacing
+        if not (0.78 <= ai_spacing_ratio <= 1.28):
+            return {"accepted": False, "reason": "detected pad pitch conflicts with semantic pad spacing",
+                    "regions": {}, "angle_degrees": round(angle, 1),
+                    "matched_components": lattice["count"], "snapped_components": snapped_count,
+                    "spacing_pixels": round(spacing_px, 1),
+                    "ai_spacing_ratio": round(ai_spacing_ratio, 3)}
     if residual_ratio > 0.18 or (lattice["count"] < 6 and snapped_count < 5):
         return {"accepted": False, "reason": "pad lattice localization confidence too low", "regions": {},
                 "angle_degrees": round(angle, 1), "matched_components": lattice["count"],
@@ -384,9 +438,11 @@ def detect_geometry_regions(image, ai_regions=None):
             "opposite_handle_score": round(mapping["opposite_handle_score"], 4),
             "handle_margin": round(mapping["handle_margin"], 4),
             "orientation_objective_gap": round(mapping["orientation_objective_gap"], 4),
+            "semantic_ai_error": round(mapping["semantic_ai_error"], 4) if mapping.get("semantic_ai_error") is not None else None,
             "lattice_positions": 12, "angle_degrees": round(angle, 1),
             "matched_components": lattice["count"], "snapped_components": snapped_count,
             "snap_median_pixels": round(snap_median * (sx + sy) / 2.0, 1) if snap_median is not None else None,
             "spacing_pixels": round(spacing_px, 1), "lattice_residual_pixels": round(residual_px, 1),
             "residual_ratio": round(residual_ratio, 3),
+            "ai_spacing_ratio": round(ai_spacing_ratio, 3) if ai_spacing_ratio is not None else None,
             "median_ai_center_error": round(median_ai_error, 4) if median_ai_error is not None else None}
