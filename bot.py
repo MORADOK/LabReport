@@ -7,6 +7,7 @@ import re
 import io
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, ImageMessage, TextSendMessage
@@ -17,12 +18,15 @@ from PIL import Image, ImageOps
 # นำเข้าโมดูลฐานข้อมูล (ที่เชื่อมกับ Supabase และมี RLS)
 from src import db_handler
 from src.cybow_reference import enforce_strict_cybow_standards
+from src.manual_cases import create_manual_case
+from src.manual_web import render_manual_form, save_manual_submission
 
 # โหลด Environment Variables
 load_dotenv()
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "https://labreport-bt3p.onrender.com").rstrip("/")
 
 # ตั้งค่า Logging Configuration
 logging.basicConfig(
@@ -114,6 +118,25 @@ def initialize_database_schema():
 def keep_alive():
     return {"status": "LHome Bot is awake and running!"}
 
+@app.get("/manual-entry", response_class=HTMLResponse)
+def manual_entry_page(case: str = ""):
+    status, page = render_manual_form(case)
+    return HTMLResponse(content=page, status_code=status)
+
+
+@app.post("/api/manual-entry")
+async def manual_entry_submit(request: Request):
+    try:
+        payload = await request.json()
+        result = save_manual_submission(payload.get("case", ""), payload.get("results", {}))
+        return JSONResponse(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Manual CYBOW submission failed")
+        raise HTTPException(status_code=500, detail="บันทึกผลไม่สำเร็จ กรุณาลองใหม่") from exc
+
+
 @app.post("/webhook")
 async def callback(request: Request):
     signature = request.headers.get("X-Line-Signature", "")
@@ -138,6 +161,43 @@ def handle_image(event):
 def handle_text(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
+    normalized_command = re.sub(r"\s+", " ", text.lower())
+
+    if normalized_command in {"บันทึกผล cybow", "กรอกผล cybow", "manual cybow", "บันทึกผลด้วยตา", "กรอกผลด้วยตา"}:
+        user_states[user_id] = {"step": "manual_waiting_for_name"}
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="🧪 เริ่มบันทึกผล CYBOW 11M แบบพนักงานอ่านสี\nกรุณาพิมพ์ชื่อ-นามสกุลของผู้ป่วย")
+        )
+        return
+
+    if user_id in user_states and user_states[user_id].get("step") == "manual_waiting_for_name":
+        patient_name = text.strip()
+        if len(patient_name) < 2:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณาพิมพ์ชื่อ-นามสกุลผู้ป่วยให้ครบถ้วน"))
+            return
+        if not PUBLIC_BASE_URL:
+            logger.error("PUBLIC_BASE_URL/RENDER_EXTERNAL_URL is not configured for manual entry links")
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="ระบบฟอร์มพนักงานยังไม่ได้ตั้งค่า URL กรุณาติดต่อผู้ดูแลระบบ"))
+            return
+        try:
+            case_token = create_manual_case(patient_name, user_id)
+        except Exception:
+            logger.exception("Failed to create manual CYBOW case")
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="สร้างเคสไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"))
+            return
+        del user_states[user_id]
+        manual_url = f"{PUBLIC_BASE_URL}/manual-entry?case={case_token}"
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=(
+                f"✅ สร้างเคสของ {patient_name} แล้ว\n"
+                "แตะลิงก์ด้านล่างเพื่อเลือกสี/ผลให้ครบ 11 ค่า\n"
+                f"{manual_url}\n\n"
+                "ลิงก์ใช้ได้ประมาณ 8 ชั่วโมงและใช้บันทึกได้ 1 ครั้ง"
+            ))
+        )
+        return
 
     if user_id in user_states and user_states[user_id].get("step") == "waiting_for_name":
         patient_name = text

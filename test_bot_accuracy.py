@@ -1,6 +1,7 @@
 import ast
 import json
 import sys
+import subprocess
 import unittest
 from pathlib import Path
 from src.standards import ALLOWED_VALUES, normalize_value
@@ -52,8 +53,17 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(validate(payload)["is_valid"])
 
     def test_imports_do_not_start_bot(self):
-        self.assertNotIn("bot", sys.modules)
-        self.assertNotIn("src.db_handler", sys.modules)
+        # Run this assertion in a fresh interpreter so unrelated test modules
+        # that legitimately exercise db_handler cannot make the result order-dependent.
+        code = (
+            "import sys; "
+            "from src.standards import ALLOWED_VALUES; "
+            "from src.cybow_reference import enforce_strict_cybow_standards; "
+            "assert 'bot' not in sys.modules; "
+            "assert 'src.db_handler' not in sys.modules"
+        )
+        result = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).parent, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

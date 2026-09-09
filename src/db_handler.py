@@ -101,6 +101,22 @@ def init_db():
             cursor.execute("ALTER TABLE records ADD COLUMN clinical_bullets TEXT DEFAULT '[]'")
 
         cursor.execute("ALTER TABLE public.records ADD COLUMN IF NOT EXISTS diagnostics JSONB")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public.manual_cases (
+                token TEXT PRIMARY KEY,
+                patient_name TEXT NOT NULL,
+                line_user_id TEXT DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                completed_at TIMESTAMPTZ
+            )
+        """)
+        cursor.execute("ALTER TABLE public.manual_cases ENABLE ROW LEVEL SECURITY")
+        cursor.execute('DROP POLICY IF EXISTS "Service role full access" ON public.manual_cases')
+        cursor.execute("""
+            CREATE POLICY "Service role full access" ON public.manual_cases
+            FOR ALL TO service_role USING (true) WITH CHECK (true)
+        """)
         cursor.execute("ALTER TABLE public.records ENABLE ROW LEVEL SECURITY")
         # Repair the legacy permissive policy even when RLS was already enabled.
         cursor.execute('DROP POLICY IF EXISTS "Service role full access" ON public.records')
@@ -166,6 +182,100 @@ def insert_record(date, urobilinogen, glucose, bilirubin, ketones, specific_grav
             cursor.close()
         if conn:
             conn.close()
+
+
+
+def create_manual_case(token, patient_name, line_user_id=""):
+    conn = cursor = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO public.manual_cases (token, patient_name, line_user_id, status)
+            VALUES (%s, %s, %s, 'pending')
+        """, (token, patient_name, line_user_id))
+        conn.commit(); return True
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"[Manual Case Error] create failed: {e}")
+        return False
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+def get_manual_case(token):
+    conn = cursor = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute("""
+            SELECT token, patient_name, line_user_id, status, created_at, completed_at
+            FROM public.manual_cases WHERE token=%s
+        """, (token,))
+        row = cursor.fetchone()
+        if not row: return None
+        keys = ['token','patient_name','line_user_id','status','created_at','completed_at']
+        return dict(zip(keys, row))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+def claim_manual_case(token):
+    """Atomically reserve a pending case so duplicate submits cannot create duplicate records."""
+    conn = cursor = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE public.manual_cases SET status='processing'
+            WHERE token=%s AND status='pending'
+        """, (token,))
+        changed = cursor.rowcount == 1
+        conn.commit(); return changed
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"[Manual Case Error] claim failed: {e}")
+        return False
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+def reopen_manual_case(token):
+    conn = cursor = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE public.manual_cases SET status='pending'
+            WHERE token=%s AND status='processing'
+        """, (token,))
+        changed = cursor.rowcount == 1
+        conn.commit(); return changed
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"[Manual Case Error] reopen failed: {e}")
+        return False
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+def complete_manual_case(token):
+    conn = cursor = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE public.manual_cases SET status='completed', completed_at=NOW()
+            WHERE token=%s AND status IN ('pending','processing')
+        """, (token,))
+        changed = cursor.rowcount == 1
+        conn.commit(); return changed
+    except Exception as e:
+        if conn: conn.rollback()
+        print(f"[Manual Case Error] complete failed: {e}")
+        return False
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 # Run explicitly during deployment: python -m src.db_handler
 if __name__ == "__main__":
