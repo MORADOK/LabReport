@@ -23,7 +23,6 @@ def _center(box):
 
 
 def _fit_indexed_line(indexed_points):
-    """Least-squares point(index)=intercept+step*index for sparse indexed anchors."""
     if len(indexed_points) < 2:
         return None
     xs = [float(i) for i, _ in indexed_points]
@@ -84,13 +83,10 @@ def _pad_signal(image, center, u, v, pitch, half_along, half_perp):
 
 
 def _smooth_local_offsets(offsets, pitch):
-    """Reject only incoherent local corrections, not the whole strip model."""
     if not offsets:
         return [], 0
     cleaned = list(offsets)
     reverted = 0
-    # Compare each point with the local median of neighbours. An outlier is replaced
-    # by zero correction, meaning the already-validated global model is used there.
     for i, (a, p) in enumerate(offsets):
         neigh = offsets[max(0, i-1):min(len(offsets), i+2)]
         ma = median([x[0] for x in neigh])
@@ -98,7 +94,6 @@ def _smooth_local_offsets(offsets, pitch):
         if abs(a-ma) > pitch*0.14 or abs(p-mp) > pitch*0.14:
             cleaned[i] = (0.0, 0.0)
             reverted += 1
-    # One extra pass clamps sharp adjacent jumps by reverting the weaker/non-zero side.
     for i in range(1, len(cleaned)):
         if (abs(cleaned[i][0]-cleaned[i-1][0]) > pitch*0.18 or
                 abs(cleaned[i][1]-cleaned[i-1][1]) > pitch*0.18):
@@ -108,6 +103,39 @@ def _smooth_local_offsets(offsets, pitch):
                 cleaned[i-1] = (0.0, 0.0)
             reverted += 1
     return cleaned, reverted
+
+
+def _refine_endpoint(image, center, u, v, pitch, half_along, half_perp, baseline_offset):
+    """Wider but still bounded refinement for first/last reagent pads.
+
+    End pads are the most affected by perspective/fit extrapolation. Search up to
+    0.24 pitch, far below one full pad spacing, and only keep the candidate when it
+    materially improves the visual signal. This cannot jump to a neighbouring pad.
+    """
+    base = _point(center, u, v, baseline_offset[0], baseline_offset[1])
+    base_sig = _pad_signal(image, base, u, v, pitch, half_along, half_perp)
+    base_score = base_sig["score"] if base_sig else -999.0
+    best = (base_score, baseline_offset[0], baseline_offset[1])
+    for along_i in range(-4, 5):
+        along = pitch*0.06*along_i
+        for perp_i in range(-3, 4):
+            perp = pitch*0.06*perp_i
+            if abs(along) > pitch*0.24 or abs(perp) > pitch*0.18:
+                continue
+            c = _point(center, u, v, along, perp)
+            if not (half_along+2 < c[0] < image.width-half_along-2 and
+                    half_perp+2 < c[1] < image.height-half_perp-2):
+                continue
+            sig = _pad_signal(image, c, u, v, pitch, half_along, half_perp)
+            if sig is None:
+                continue
+            objective = sig["score"] - 0.20*abs(along) - 0.16*abs(perp)
+            if objective > best[0]:
+                best = (objective, along, perp)
+    # Require a meaningful gain so a neutral background patch cannot pull an end pad.
+    if best[0] >= base_score + 6.0:
+        return (best[1], best[2]), round(best[0]-base_score, 1)
+    return baseline_offset, 0.0
 
 
 def detect_strip_signal_regions(image, ai_regions):
@@ -126,7 +154,6 @@ def detect_strip_signal_regions(image, ai_regions):
     if len(indexed) < 5:
         return {"accepted": False, "reason": "too few semantic anchors for strip fit", "regions": {},
                 "semantic_anchor_count": len(indexed)}
-    # Require anchors to span most of the strip; five adjacent boxes are not enough.
     if indexed[-1][0] - indexed[0][0] < 6:
         return {"accepted": False, "reason": "semantic anchors do not span enough reagent positions", "regions": {},
                 "semantic_anchor_count": len(indexed)}
@@ -208,10 +235,7 @@ def detect_strip_signal_regions(image, ai_regions):
     if abs(best["perp_step"]*10) > pitch*0.22:
         return {"accepted": False, "reason": "strip slope correction is excessive", "regions": {}}
 
-    # Bounded local refinement. It can improve a pad center but can never define the
-    # semantic order/pitch. Incoherent corrections fall back to the global model.
     raw_offsets = []
-    local_candidates = []
     for center in best["centers"]:
         local_best = None
         for along_i in range(-3, 4):
@@ -228,12 +252,15 @@ def detect_strip_signal_regions(image, ai_regions):
                 objective = sig["score"] - 0.24*abs(along) - 0.18*abs(perp)
                 if local_best is None or objective > local_best[0]:
                     local_best = (objective, along, perp)
-        if local_best is None:
-            raw_offsets.append((0.0, 0.0))
-        else:
-            raw_offsets.append((local_best[1], local_best[2]))
+        raw_offsets.append((0.0, 0.0) if local_best is None else (local_best[1], local_best[2]))
 
     offsets, reverted = _smooth_local_offsets(raw_offsets, pitch)
+    endpoint_gains = [0.0, 0.0]
+    # End pads can be slightly misregistered by a line fit that is excellent in the middle.
+    for slot, gain_idx in ((0, 0), (10, 1)):
+        offsets[slot], endpoint_gains[gain_idx] = _refine_endpoint(
+            image, best["centers"][slot], u, v, pitch, half_along, half_perp, offsets[slot])
+
     refined_centers = [_point(c, u, v, a, p) for c, (a, p) in zip(best["centers"], offsets)]
     max_along_jump = max((abs(b[0]-a[0]) for a,b in zip(offsets, offsets[1:])), default=0.0)
     max_perp_jump = max((abs(b[1]-a[1]) for a,b in zip(offsets, offsets[1:])), default=0.0)
@@ -246,7 +273,7 @@ def detect_strip_signal_regions(image, ai_regions):
                           min(1.0, (cy+half_perp)/image.height)]
 
     return {"accepted": True, "reason": None, "regions": regions,
-            "source": "joint_strip_signal_v4_sparse_semantic", "pitch_pixels": round(pitch, 1),
+            "source": "joint_strip_signal_v5_endpoint_refined", "pitch_pixels": round(pitch, 1),
             "semantic_anchor_count": len(indexed), "semantic_span_slots": indexed[-1][0]-indexed[0][0],
             "strong_pad_count": best["strong"], "visual_score": round(best["visual"], 1),
             "model_margin": round(margin, 2), "median_pad_contrast": round(median_contrast, 1),
@@ -257,5 +284,6 @@ def detect_strip_signal_regions(image, ai_regions):
             "semantic_axis_step_pixels": [round(dx, 2), round(dy, 2)],
             "local_offsets_pixels": [[round(a,1), round(b,1)] for a,b in offsets],
             "local_refinement_reverted_count": reverted,
+            "endpoint_signal_gains": endpoint_gains,
             "max_local_along_jump_pixels": round(max_along_jump,1),
             "max_local_perp_jump_pixels": round(max_perp_jump,1)}

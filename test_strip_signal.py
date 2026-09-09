@@ -32,7 +32,7 @@ class StripSignalTests(unittest.TestCase):
         img, boxes = self._fixture(slope=2.6)
         result = detect_strip_signal_regions(img, boxes)
         self.assertTrue(result["accepted"], result)
-        self.assertEqual(result["source"], "joint_strip_signal_v4_sparse_semantic")
+        self.assertEqual(result["source"], "joint_strip_signal_v5_endpoint_refined")
         self.assertLessEqual(abs(result["phase_pixels"]), result["pitch_pixels"] * 0.12 + 0.2)
         self.assertGreaterEqual(result["strong_pad_count"], 5)
         self.assertEqual(len(result["regions"]), 11)
@@ -58,6 +58,22 @@ class StripSignalTests(unittest.TestCase):
         result = detect_strip_signal_regions(img, sparse)
         self.assertFalse(result["accepted"])
         self.assertIn("span", result["reason"])
+
+    def test_endpoint_refinement_can_correct_last_pad(self):
+        img, boxes = self._fixture(slope=1.2)
+        # Shift only the final reagent pad farther along the strip, simulating
+        # perspective/end-fit error while keeping it well below one full pitch.
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(img)
+        # Paint a strong ascorbic-colored pad slightly to the right of the nominal slot.
+        x0, y0, pitch = 180, 160, 72
+        cx = x0 + pitch*10 + 14
+        cy = y0 + 1.2*(10-5)
+        draw.rectangle((cx-15, cy-20, cx+15, cy+20), fill=(35,95,100))
+        result = detect_strip_signal_regions(img, boxes)
+        self.assertTrue(result["accepted"], result)
+        self.assertEqual(result["source"], "joint_strip_signal_v5_endpoint_refined")
+        self.assertEqual(len(result["endpoint_signal_gains"]), 2)
 
     def test_blank_image_rejected(self):
         img = Image.new("RGB", (1200, 320), (220,220,220))
