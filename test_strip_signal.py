@@ -23,7 +23,6 @@ class StripSignalTests(unittest.TestCase):
             cx = x0 + pitch*i
             cy = y0 + slope*(i-5)
             draw.rectangle((cx-15, cy-20, cx+15, cy+20), fill=colors[i])
-            # Coarse AI boxes intentionally offset vertically and slightly in phase.
             acx = cx + 5
             acy = y0 + 9
             boxes[p] = [(acx-22)/w, (acy-45)/h, (acx+22)/w, (acy+45)/h]
@@ -33,7 +32,7 @@ class StripSignalTests(unittest.TestCase):
         img, boxes = self._fixture(slope=2.6)
         result = detect_strip_signal_regions(img, boxes)
         self.assertTrue(result["accepted"], result)
-        self.assertEqual(result["source"], "joint_strip_signal_v3_local_refined")
+        self.assertEqual(result["source"], "joint_strip_signal_v4_sparse_semantic")
         self.assertLessEqual(abs(result["phase_pixels"]), result["pitch_pixels"] * 0.12 + 0.2)
         self.assertGreaterEqual(result["strong_pad_count"], 5)
         self.assertEqual(len(result["regions"]), 11)
@@ -43,6 +42,22 @@ class StripSignalTests(unittest.TestCase):
         result = detect_strip_signal_regions(img, boxes)
         self.assertTrue(result["accepted"], result)
         self.assertEqual(len(result["regions"]), 11)
+
+    def test_sparse_semantic_boxes_still_fit_full_strip(self):
+        img, boxes = self._fixture(slope=2.0)
+        keep = {0, 2, 5, 8, 10}
+        sparse = {p: box for i, (p, box) in enumerate(boxes.items()) if i in keep}
+        result = detect_strip_signal_regions(img, sparse)
+        self.assertTrue(result["accepted"], result)
+        self.assertEqual(result["semantic_anchor_count"], 5)
+        self.assertEqual(len(result["regions"]), 11)
+
+    def test_adjacent_sparse_boxes_do_not_define_whole_strip(self):
+        img, boxes = self._fixture()
+        sparse = {p: box for i, (p, box) in enumerate(boxes.items()) if i < 5}
+        result = detect_strip_signal_regions(img, sparse)
+        self.assertFalse(result["accepted"])
+        self.assertIn("span", result["reason"])
 
     def test_blank_image_rejected(self):
         img = Image.new("RGB", (1200, 320), (220,220,220))
