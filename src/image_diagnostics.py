@@ -93,12 +93,28 @@ def _pixel_crosscheck(results, rgb):
     return {"checks": checks, "mismatches": mismatches, "accepted": not mismatches}
 
 
+def _pixel_appearance(rgb):
+    vals = [float(v) for v in rgb]
+    chroma = max(vals) - min(vals)
+    mean = sum(vals) / 3.0
+    saturation_proxy = chroma / max(max(vals), 1.0) * 255.0
+    return {"chroma": chroma, "mean": mean, "saturation_proxy": saturation_proxy}
+
+
+def _is_positive_value(value):
+    if value is None:
+        return False
+    text = str(value).strip().lower()
+    normal_tokens = {"neg.", "neg", "negative", "0.1 normal", "1.000", "5", "6", "6.5", "7", "8", "9"}
+    return text not in normal_tokens
+
+
 def reconcile_results(results, rgb):
     """Fuse calibrated pixel evidence with AI labels conservatively.
 
-    Pixel evidence is primary only when the nearest reference is both close enough
-    and clearly separated from the runner-up. AI is used as a tie-breaker for
-    ambiguous colors. Unverified pattern-based parameters (e.g. blood) remain AI-led.
+    The key rule is absolute closeness before separation margin. A background-like
+    ROI must never become a confident positive result merely because the second-best
+    reference is even farther away.
     """
     resolved = dict(results)
     decisions = {}
@@ -113,46 +129,83 @@ def reconcile_results(results, rgb):
             review.append(param)
             decisions[param] = {"source": "unresolved", "reason": "missing pixel/reference data"}
             continue
+
         ranked = sorted((math.dist(detected, ref["rgb"]), ref["value"]) for ref in refs)
         nearest_distance, nearest = ranked[0]
         second_distance = ranked[1][0] if len(ranked) > 1 else float("inf")
         margin = second_distance - nearest_distance
         ai_value = results.get(param)
+        appearance = _pixel_appearance(detected)
+        low_signal = appearance["chroma"] < 18 and appearance["saturation_proxy"] < 28
+        nearest_positive = _is_positive_value(nearest)
 
-        # Strong pixel evidence may correct an AI label. Thresholds are deliberately
-        # conservative because current references are photo-derived, not instrument-certified.
-        if nearest_distance <= 90 and margin >= 14:
+        # Strong pixel override now requires both a clear margin and a genuinely
+        # close absolute match. Positive/trace calls from nearly neutral ROIs are
+        # forbidden because they usually indicate carrier/background sampling.
+        strong_distance_limit = 58.0
+        if nearest_distance <= strong_distance_limit and margin >= 14:
+            if nearest_positive and low_signal:
+                review.append(param)
+                decisions[param] = {"source": "review_background_like_roi", "ai_value": ai_value,
+                                    "pixel_nearest": nearest,
+                                    "nearest_distance": round(nearest_distance,1),
+                                    "margin": round(margin,1),
+                                    "chroma": round(appearance["chroma"],1)}
+                continue
             resolved[param] = nearest
             source = "pixel_primary" if nearest != ai_value else "pixel_ai_agree"
             decisions[param] = {"source": source, "value": nearest, "ai_value": ai_value,
-                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1)}
+                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1),
+                                "chroma": round(appearance["chroma"],1)}
             continue
 
-        # Moderate pixel evidence is accepted when AI agrees with the same class.
-        if nearest_distance <= 120 and ai_value == nearest and margin >= 6:
+        # Moderate evidence is accepted only on agreement, with tighter absolute
+        # distance and an explicit guard against neutral/background-like positives.
+        if nearest_distance <= 85 and ai_value == nearest and margin >= 6:
+            if nearest_positive and low_signal:
+                review.append(param)
+                decisions[param] = {"source": "review_background_like_roi", "ai_value": ai_value,
+                                    "pixel_nearest": nearest,
+                                    "nearest_distance": round(nearest_distance,1),
+                                    "margin": round(margin,1),
+                                    "chroma": round(appearance["chroma"],1)}
+                continue
             resolved[param] = ai_value
             decisions[param] = {"source": "ai_pixel_agree_moderate", "value": ai_value,
-                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1)}
+                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1),
+                                "chroma": round(appearance["chroma"],1)}
             continue
 
-        # If AI selected a neighbouring reference that is almost tied with the pixel
-        # nearest (<12 RGB-distance points), treat the color as ambiguous and retain
-        # the AI label rather than falsely declaring a conflict.
+        # AI tie-break is allowed only when both candidate colors are reasonably
+        # close to the measured pixel. This blocks very distant pH/protein style
+        # decisions observed in field logs.
         selected_ref = next((ref for ref in refs if ref["value"] == ai_value), None)
         if selected_ref is not None:
             selected_distance = math.dist(detected, selected_ref["rgb"])
-            if selected_distance <= 110 and selected_distance - nearest_distance <= 12:
+            if (selected_distance <= 72 and nearest_distance <= 72 and
+                    selected_distance - nearest_distance <= 10):
+                if _is_positive_value(ai_value) and low_signal:
+                    review.append(param)
+                    decisions[param] = {"source": "review_background_like_roi", "ai_value": ai_value,
+                                        "pixel_nearest": nearest,
+                                        "selected_distance": round(selected_distance,1),
+                                        "nearest_distance": round(nearest_distance,1),
+                                        "chroma": round(appearance["chroma"],1)}
+                    continue
                 resolved[param] = ai_value
                 decisions[param] = {"source": "ai_tiebreak_ambiguous_pixel", "value": ai_value,
                                     "pixel_nearest": nearest,
                                     "selected_distance": round(selected_distance,1),
                                     "nearest_distance": round(nearest_distance,1),
-                                    "distance_gap": round(selected_distance-nearest_distance,1)}
+                                    "distance_gap": round(selected_distance-nearest_distance,1),
+                                    "chroma": round(appearance["chroma"],1)}
                 continue
 
         review.append(param)
         decisions[param] = {"source": "review", "ai_value": ai_value, "pixel_nearest": nearest,
-                            "nearest_distance": round(nearest_distance,1), "margin": round(margin,1)}
+                            "nearest_distance": round(nearest_distance,1), "margin": round(margin,1),
+                            "chroma": round(appearance["chroma"],1),
+                            "saturation_proxy": round(appearance["saturation_proxy"],1)}
     return {"resolved_results": resolved, "decisions": decisions,
             "review": review, "accepted": not review}
 

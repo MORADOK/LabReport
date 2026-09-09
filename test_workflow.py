@@ -29,7 +29,7 @@ def functions_from(path, names, namespace):
 
 class WorkflowTests(unittest.TestCase):
     def run_workflow(self, payload):
-        image = Image.effect_noise((400,400),12).convert("RGB")
+        image = Image.new("RGB", (400,400), (194,194,190))
         draw = ImageDraw.Draw(image)
         # Paint each proposed pad with the matching reference color so the happy-path
         # fixture represents a physically coherent strip rather than random noise.
@@ -39,7 +39,7 @@ class WorkflowTests(unittest.TestCase):
             color = ref["rgb"] if ref else (80 + i*10, 120, 180)
             draw.rectangle((int(x1*400), int(y1*400), int(x2*400), int(y2*400)), fill=color)
         buffer = io.BytesIO()
-        image.save(buffer, format="JPEG")
+        image.save(buffer, format="PNG")
         raw = buffer.getvalue()
         line = MagicMock()
         line.get_message_content.return_value.iter_content.return_value = [raw]
