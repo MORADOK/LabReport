@@ -120,14 +120,15 @@ def detect_strip_signal_regions(image, ai_regions):
     candidates = []
     # Joint search. All pads move together, so any accepted solution is a single
     # coherent strip even when individual pale pads provide little visual signal.
-    for phase_i in range(-5, 6):
-        phase = pitch*0.045*phase_i
-        for perp_i in range(-7, 8):
-            perp0 = pitch*0.055*perp_i
-            for tilt_i in range(-4, 5):
-                # Per-pad perpendicular drift; +/-0.044 pitch per step covers
-                # several degrees of angle error over the 11-pad span.
-                perp_step = pitch*0.011*tilt_i
+    # Keep the global phase close to the semantic pad centers. Previous versions
+    # allowed +/-0.225 pitch and could lock onto a neighboring reagent/gap.
+    for phase_i in range(-4, 5):
+        phase = pitch*0.03*phase_i   # +/-0.12 pitch
+        for perp_i in range(-5, 6):
+            perp0 = pitch*0.04*perp_i   # +/-0.20 pitch
+            for tilt_i in range(-3, 4):
+                # Limit total cross-strip drift to about 0.18 pitch across 10 gaps.
+                perp_step = pitch*0.006*tilt_i
                 centers = []
                 signals = []
                 valid = True
@@ -151,8 +152,13 @@ def detect_strip_signal_regions(image, ai_regions):
                 # Use strongest 7 pads so pale/negative pads do not dominate; still
                 # reward coverage and penalize large deviations from semantic prior.
                 visual = sum(scores[:7]) / 7.0
-                prior_penalty = 0.10*abs(phase) + 0.08*abs(perp0) + 0.10*abs(perp_step)*5
-                objective = visual + strong*1.5 - prior_penalty
+                # Strongly discourage phase drift; visual peaks alone must not
+                # pull the 11 semantic slots onto adjacent pads.
+                prior_penalty = 0.22*abs(phase) + 0.10*abs(perp0) + 0.16*abs(perp_step)*5
+                # Center-vs-gap periodicity rewards a true pad lattice rather than
+                # a line that merely crosses colorful background patches.
+                gap_like = median([s["contrast"] for s in signals])
+                objective = visual + strong*1.5 + 0.10*gap_like - prior_penalty
                 candidates.append({"objective": objective, "visual": visual, "strong": strong,
                                    "phase": phase, "perp0": perp0, "perp_step": perp_step,
                                    "centers": centers, "signals": signals})
@@ -181,14 +187,14 @@ def detect_strip_signal_regions(image, ai_regions):
                 "visual_score": round(best["visual"], 1), "pitch_pixels": round(pitch, 1)}
     # A small margin is tolerated when the best model stays very close to the AI
     # semantic line; this handles flat backgrounds where neighboring grid cells tie.
-    ai_close = abs(best["phase"]) <= pitch*0.14 and abs(best["perp0"]) <= pitch*0.22
+    ai_close = abs(best["phase"]) <= pitch*0.10 and abs(best["perp0"]) <= pitch*0.18
     if margin < 2.0 and not ai_close:
         return {"accepted": False, "reason": "joint strip position is ambiguous", "regions": {},
                 "model_margin": round(margin, 2), "pitch_pixels": round(pitch, 1)}
 
     # Spacing is guaranteed by construction. Refuse excessive total slope correction.
     total_perp_drift = abs(best["perp_step"]*10)
-    if total_perp_drift > pitch*0.46:
+    if total_perp_drift > pitch*0.22:
         return {"accepted": False, "reason": "strip slope correction is excessive", "regions": {}}
 
     regions = {}
@@ -199,7 +205,7 @@ def detect_strip_signal_regions(image, ai_regions):
                           min(1.0, (cy+half_perp)/image.height)]
 
     return {"accepted": True, "reason": None, "regions": regions,
-            "source": "joint_strip_signal_v1", "pitch_pixels": round(pitch, 1),
+            "source": "joint_strip_signal_v2_phase_locked", "pitch_pixels": round(pitch, 1),
             "strong_pad_count": best["strong"], "visual_score": round(best["visual"], 1),
             "model_margin": round(margin, 2), "median_pad_contrast": round(median_contrast, 1),
             "median_pad_saturation": round(median_sat, 1),
