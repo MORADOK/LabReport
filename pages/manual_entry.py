@@ -6,6 +6,7 @@ import streamlit as st
 from src import db_handler
 from src.access import require_dashboard_login
 from src.standards import CYBOW_11M_STANDARDS
+from src.manual_summary import summarize_manual_results
 
 st.set_page_config(page_title="CYBOW 11M Manual Entry", page_icon="🧪", layout="wide")
 require_dashboard_login()
@@ -108,14 +109,24 @@ if st.session_state.manual_review and not missing and patient_name.strip():
     confirm = st.checkbox("ฉันได้เทียบแถบจริงกับตาราง CYBOW 11M REF 0974 และตรวจทานครบทั้ง 11 ค่าแล้ว")
 
     if st.button("💾 ยืนยันและบันทึกผล", type="primary", use_container_width=True, disabled=not confirm):
+        with st.spinner("AI กำลังสรุปผลจาก 11 ค่าที่พนักงานยืนยัน..."):
+            ai_summary = summarize_manual_results(dict(selections))
+
         diagnostics = {
-            "entry_mode": "manual_visual_ref_0974",
+            "entry_mode": "manual_visual_ref_0974_ai_summary",
             "reference": "CYBOW 11M REF 0974",
             "entered_at": datetime.now().isoformat(timespec="seconds"),
             "operator_note": operator_note.strip(),
             "selected_results": dict(selections),
             "human_verified": True,
+            "ai_summary_used": ai_summary.get("ai_used", False),
+            "ai_summary_model": ai_summary.get("model"),
         }
+        if ai_summary.get("error"):
+            diagnostics["ai_summary_error"] = ai_summary["error"]
+
+        summary_text = ai_summary["summary"]
+        summary_bullets = ai_summary["bullets"]
         success = db_handler.insert_record(
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             urobilinogen=selections["urobilinogen"], glucose=selections["glucose"],
@@ -124,12 +135,18 @@ if st.session_state.manual_review and not missing and patient_name.strip():
             ph=float(selections["ph"]), protein=selections["protein"], nitrite=selections["nitrite"],
             leukocytes=selections["leukocytes"], ascorbic_acid=selections["ascorbic_acid"],
             notes=patient_name.strip() + ((" | " + operator_note.strip()) if operator_note.strip() else ""),
-            clinical_summary="; ".join(f"{p}: {selections[p]}" for p, _, _ in PARAMETERS),
-            clinical_bullets=["ผลบันทึกด้วยตาโดยพนักงานเทียบกับ CYBOW 11M REF 0974"],
+            clinical_summary=summary_text,
+            clinical_bullets=summary_bullets,
             diagnostics=diagnostics,
         )
         if success:
-            st.success("✅ บันทึกผลตรวจครบ 11 ค่าเรียบร้อยแล้ว")
+            st.success("✅ บันทึกผลตรวจครบ 11 ค่า พร้อมสรุปผลเรียบร้อยแล้ว")
+            st.markdown("### 🤖 สรุปผลโดย AI" if ai_summary.get("ai_used") else "### 📝 สรุปผลสำรอง")
+            st.write(summary_text)
+            for bullet in summary_bullets:
+                st.write("• " + bullet)
+            if not ai_summary.get("ai_used"):
+                st.info("AI ไม่พร้อมใช้งานในขณะบันทึก แต่ระบบได้บันทึก 11 ค่าที่พนักงานยืนยันและสรุปสำรองไว้แล้ว")
             st.session_state.manual_review = False
         else:
             st.error("บันทึกฐานข้อมูลไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อฐานข้อมูล")
