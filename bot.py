@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, ImageMessage, TextSendMessage
+from linebot.models import MessageEvent, TextMessage, ImageMessage, TextSendMessage, FlexSendMessage
 from dotenv import load_dotenv
 from openai import OpenAI
 from PIL import Image, ImageOps
@@ -188,14 +188,42 @@ def handle_text(event):
             return
         del user_states[user_id]
         manual_url = f"{PUBLIC_BASE_URL}/manual-entry?case={case_token}"
+        flex_contents = {
+            "type": "bubble",
+            "size": "mega",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "md",
+                "contents": [
+                    {"type": "text", "text": "CYBOW 11M", "weight": "bold", "size": "xl", "color": "#16794B"},
+                    {"type": "text", "text": f"ผู้ป่วย: {patient_name}", "weight": "bold", "size": "md", "wrap": True},
+                    {"type": "text", "text": "แตะปุ่มด้านล่างเพื่อเลือกผลจากตารางสี REF 0974 ให้ครบ 11 ค่า", "size": "sm", "color": "#5B6670", "wrap": True},
+                    {"type": "separator", "margin": "md"},
+                    {"type": "text", "text": "ลิงก์ใช้ได้ประมาณ 8 ชั่วโมง และบันทึกได้ 1 ครั้ง", "size": "xs", "color": "#8A949E", "wrap": True}
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "color": "#16794B",
+                        "action": {"type": "uri", "label": "เปิดฟอร์มบันทึกผล", "uri": manual_url}
+                    }
+                ]
+            }
+        }
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=(
-                f"✅ สร้างเคสของ {patient_name} แล้ว\n"
-                "แตะลิงก์ด้านล่างเพื่อเลือกสี/ผลให้ครบ 11 ค่า\n"
-                f"{manual_url}\n\n"
-                "ลิงก์ใช้ได้ประมาณ 8 ชั่วโมงและใช้บันทึกได้ 1 ครั้ง"
-            ))
+            FlexSendMessage(
+                alt_text=f"เปิดฟอร์มบันทึกผล CYBOW 11M ของ {patient_name}",
+                contents=flex_contents,
+            )
         )
         return
 
