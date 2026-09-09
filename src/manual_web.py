@@ -7,6 +7,7 @@ from datetime import datetime
 from src import db_handler
 from src.manual_cases import get_manual_case
 from src.manual_summary import summarize_manual_results
+from src.manual_form_colors import MANUAL_FORM_COLORS
 from src.standards import CYBOW_11M_STANDARDS, ALLOWED_VALUES, normalize_value
 
 PARAMETERS = [
@@ -43,12 +44,17 @@ def render_manual_form(token: str) -> tuple[int, str]:
     blocks = []
     for idx, (param, title, unit) in enumerate(PARAMETERS, 1):
         options = []
-        for item in CYBOW_11M_STANDARDS[param]:
-            r, g, b = item["rgb"]
+        standards = CYBOW_11M_STANDARDS[param]
+        ui_colors = MANUAL_FORM_COLORS[param]
+        for item, rgb in zip(standards, ui_colors):
+            r, g, b = rgb
             value = html.escape(item["value"], quote=True)
+            label = html.escape(item.get("label") or item["value"])
+            pattern_class = " pattern-spots" if item.get("pattern") == "spots" else (" pattern-spots-dense" if item.get("pattern") == "spots_dense" else "")
             options.append(
                 f"<label class='opt'><input type='radio' name='{param}' value='{value}' required>"
-                f"<span class='sw' style='background:rgb({r},{g},{b})'></span><span>{value}</span></label>"
+                f"<span class='sw{pattern_class}' style='--swatch:rgb({r},{g},{b});background:rgb({r},{g},{b})'></span>"
+                f"<span class='opttext'><b>{value}</b><small>{label}</small></span></label>"
             )
         unit_html = f"<small>{html.escape(unit)}</small>" if unit else ""
         blocks.append(f"<section><h3>{idx}. {html.escape(title)} {unit_html}</h3><div class='opts'>{''.join(options)}</div></section>")
@@ -56,7 +62,7 @@ def render_manual_form(token: str) -> tuple[int, str]:
     patient = html.escape(case["patient_name"])
     token_js = html.escape(token, quote=True)
     body = f"""
-<h1>🧪 CYBOW 11M — บันทึกผลด้วยตา</h1>
+<div class='topbar'><div><div class='brand'>HomeLab</div><div class='subbrand'>CYBOW 11M Manual Entry</div></div><div class='ref'>REF 0974</div></div>
 <div class='patient'><b>ผู้ป่วย:</b> {patient}</div>
 <div class='note'><b>วิธีใช้:</b> เทียบแถบจริงกับฉลาก CYBOW 11M REF 0974 แล้วเลือกให้ครบ 11 ค่า<br><b>เวลาอ่าน:</b> 60 วินาที; Leukocytes 90–120 วินาที<br><b>AI จะไม่แก้ค่าที่พนักงานเลือก</b> แต่จะสรุปผลหลังยืนยัน</div>
 <form id='f'>{''.join(blocks)}
@@ -75,7 +81,7 @@ function escapeHtml(s){{return String(s).replace(/[&<>\"']/g,m=>({{'&':'&amp;','
 </script>
 """
     css = """<style>
-body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;margin:0;background:#f4f7f8;color:#17202a}.wrap{max-width:980px;margin:auto;padding:14px}.card{background:white;border:1px solid #dce7e9;border-radius:16px;padding:18px}.patient{font-size:1.12rem;padding:12px;background:#e8f7ef;border-radius:10px;margin-bottom:10px}.note{background:#f7fafb;border:1px solid #dae4e8;padding:12px;border-radius:10px;margin-bottom:14px;line-height:1.55}section{border-top:1px solid #e5eaec;padding:12px 0}h3{margin:0 0 9px}.opts{display:flex;flex-wrap:wrap;gap:8px}.opt{display:flex;align-items:center;gap:7px;border:1px solid #cfd9dd;border-radius:10px;padding:7px 10px;cursor:pointer;background:#fff}.opt:has(input:checked){outline:3px solid #2f9e64;background:#effbf4}.sw{width:30px;height:30px;border:1px solid #777;border-radius:6px}.verify{display:block;padding:14px;background:#fff9db;border-radius:10px;margin:14px 0}button{width:100%;padding:14px;border:0;border-radius:11px;background:#16794b;color:white;font-size:1.05rem;font-weight:700}button:disabled{opacity:.6}.ok{background:#ecfdf3;border:1px solid #86d5a8;padding:16px;border-radius:12px}.err{background:#fff1f1;border:1px solid #f2aaaa;padding:12px;border-radius:10px;color:#9b1c1c}small{font-weight:400;color:#64748b}@media(max-width:600px){.opt{width:calc(50% - 26px)}.wrap{padding:8px}.card{padding:12px}}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;margin:0;background:#f4f7f8;color:#17202a}.wrap{max-width:980px;margin:auto;padding:14px}.card{background:white;border:1px solid #dce7e9;border-radius:16px;padding:18px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.brand{font-size:1.4rem;font-weight:800;color:#16794b}.subbrand{font-size:.86rem;color:#64748b}.ref{font-weight:800;color:#0f4c81;background:#eef6ff;border:1px solid #cfe1f7;padding:6px 9px;border-radius:9px}.patient{font-size:1.12rem;padding:12px;background:#e8f7ef;border-radius:10px;margin-bottom:10px}.note{background:#f7fafb;border:1px solid #dae4e8;padding:12px;border-radius:10px;margin-bottom:14px;line-height:1.55}section{border-top:1px solid #e5eaec;padding:12px 0}h3{margin:0 0 9px}.opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.opt{display:flex;align-items:center;gap:10px;border:1px solid #cfd9dd;border-radius:13px;padding:10px 12px;cursor:pointer;background:#fff;min-height:64px}.opt:has(input:checked){outline:3px solid #2f9e64;background:#effbf4}.opt input{width:22px;height:22px;flex:none}.sw{width:54px;height:54px;border:1px solid #777;border-radius:9px;flex:none;box-shadow:inset 0 0 0 1px #ffffff55}.opttext{display:flex;flex-direction:column;line-height:1.15}.opttext>b{font-size:1rem}.opttext>small{font-size:.72rem;color:#7a8792;margin-top:3px}.pattern-spots,.pattern-spots-dense{position:relative;overflow:hidden}.pattern-spots:after,.pattern-spots-dense:after{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,#238060 0 2px,transparent 2.4px);background-size:16px 16px;background-position:3px 4px}.pattern-spots-dense:after{background-size:10px 10px}.verify{display:block;padding:14px;background:#fff9db;border-radius:10px;margin:14px 0}button{width:100%;padding:14px;border:0;border-radius:11px;background:#16794b;color:white;font-size:1.05rem;font-weight:700}button:disabled{opacity:.6}.ok{background:#ecfdf3;border:1px solid #86d5a8;padding:16px;border-radius:12px}.err{background:#fff1f1;border:1px solid #f2aaaa;padding:12px;border-radius:10px;color:#9b1c1c}small{font-weight:400;color:#64748b}@media(max-width:600px){.opts{grid-template-columns:repeat(2,minmax(0,1fr))}.opt{padding:9px 10px;gap:8px;min-height:62px}.sw{width:46px;height:46px}.opttext>b{font-size:.96rem}.wrap{padding:8px}.card{padding:12px}}
 </style>"""
     return 200, f"<!doctype html><html lang='th'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CYBOW 11M Manual Entry</title>{css}</head><body><div class='wrap'><div class='card'>{body}</div></div></body></html>"
 

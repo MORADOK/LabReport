@@ -6,6 +6,7 @@ import streamlit as st
 from src import db_handler
 from src.access import require_dashboard_login
 from src.standards import CYBOW_11M_STANDARDS
+from src.manual_form_colors import MANUAL_FORM_COLORS
 from src.manual_summary import summarize_manual_results
 
 st.set_page_config(page_title="CYBOW 11M Manual Entry", page_icon="🧪", layout="wide")
@@ -55,6 +56,7 @@ st.caption("แตะค่าด้านล่างแต่ละราย�
 selections = {}
 for idx, (param, title, unit) in enumerate(PARAMETERS, 1):
     standards = CYBOW_11M_STANDARDS[param]
+    ui_colors = MANUAL_FORM_COLORS[param]
     options = [item["value"] for item in standards]
     default_key = f"manual_{param}"
     if default_key not in st.session_state:
@@ -62,8 +64,8 @@ for idx, (param, title, unit) in enumerate(PARAMETERS, 1):
 
     st.markdown(f"<div class='test-card'><b>{idx}. {html.escape(title)}</b>{(' · ' + html.escape(unit)) if unit else ''}", unsafe_allow_html=True)
     swatches = []
-    for item in standards:
-        r, g, b = item["rgb"]
+    for item, rgb in zip(standards, ui_colors):
+        r, g, b = rgb
         swatches.append(f"<span class='swatch'><span class='swatch-color' style='background:rgb({r},{g},{b})'></span>{html.escape(item['value'])}</span>")
     st.markdown("<div class='swatch-row'>" + "".join(swatches) + "</div>", unsafe_allow_html=True)
     selections[param] = st.radio(
@@ -71,15 +73,15 @@ for idx, (param, title, unit) in enumerate(PARAMETERS, 1):
         key=default_key, label_visibility="collapsed"
     )
     if selections[param] is not None:
-        chosen = next(x for x in standards if x["value"] == selections[param])
-        r, g, b = chosen["rgb"]
+        chosen_index = options.index(selections[param])
+        r, g, b = ui_colors[chosen_index]
         st.markdown(f"<span class='selected-chip'><span class='swatch-color' style='width:22px;height:22px;background:rgb({r},{g},{b})'></span>เลือกแล้ว: {html.escape(selections[param])}</span>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 missing = [title for param, title, _ in PARAMETERS if selections[param] is None]
 selected_count = 11 - len(missing)
 st.progress(selected_count / 11, text=f"เลือกแล้ว {selected_count}/11 ค่า")
-st.caption("สีบนหน้าจอเป็นตัวช่วยอ้างอิงจากภาพ REF 0974 เท่านั้น การตัดสินควรเทียบแถบจริงกับฉลากผู้ผลิตภายใต้แสงที่เหมาะสม")
+st.caption("สีบนหน้าจอใช้ชุดสีจากแบบฟอร์ม CYBOW 11M REF 0974 ที่กำหนดไว้สำหรับการเลือกด้วยตา")
 
 if "manual_review" not in st.session_state:
     st.session_state.manual_review = False
