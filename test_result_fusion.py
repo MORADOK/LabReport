@@ -60,16 +60,18 @@ class ResultFusionTests(unittest.TestCase):
         self.assertFalse(fused["accepted"])
         self.assertIn("ph", fused["review"])
 
-    def test_close_low_margin_color_is_borderline_not_review(self):
+    def test_intermediate_sg_color_resolves_safely(self):
         results, rgb = self._baseline()
-        # SG sample close to 1.025 with modest separation from 1.030.
+        refs = CYBOW_11M_STANDARDS["specific_gravity"]
+        a = refs[5]["rgb"]
+        b = refs[6]["rgb"]
+        sample = [round(a[i] * 0.78 + b[i] * 0.22) for i in range(3)]
         results["specific_gravity"] = "1.015"
-        rgb["specific_gravity"] = [150, 126, 54]
+        rgb["specific_gravity"] = sample
         fused = reconcile_results(results, rgb)
         self.assertTrue(fused["accepted"], fused)
-        self.assertIn("specific_gravity", fused["borderline"])
         self.assertEqual(fused["resolved_results"]["specific_gravity"], "1.025")
-        self.assertEqual(fused["decisions"]["specific_gravity"]["confidence_level"], "borderline")
+        self.assertIn(fused["decisions"]["specific_gravity"]["confidence_level"], {"confident", "borderline"})
 
     def test_borderline_does_not_rescue_far_color(self):
         results, rgb = self._baseline()

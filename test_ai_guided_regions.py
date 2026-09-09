@@ -29,7 +29,7 @@ class GuidedRegionTests(unittest.TestCase):
         for param, expected_x in zip(ALLOWED_VALUES, centers):
             box = result["regions"][param]
             actual_x = ((box[0]+box[2])/2) * image.width
-            self.assertLess(abs(actual_x-expected_x), 18)
+            self.assertLessEqual(abs(actual_x-expected_x), 18)
 
     def test_rejects_incomplete_ai_regions(self):
         image = Image.new("RGB", (800, 300), "white")

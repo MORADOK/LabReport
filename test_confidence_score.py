@@ -4,10 +4,11 @@ from PIL import Image
 from src.image_diagnostics import prepare_image, image_quality, sample_regions
 from src.cybow_reference import calculate_confidence_from_rgb as similarity
 from src.standards import valid_rgb
+from src.manual_form_colors import MANUAL_FORM_COLORS
 
 class ImageTests(unittest.TestCase):
     def test_perfect_color_and_invalid_inputs(self):
-        self.assertEqual(similarity([92,151,185], "glucose", "neg."), 100)
+        self.assertEqual(similarity(list(MANUAL_FORM_COLORS["glucose"][0]), "glucose", "neg."), 100)
         for rgb in (None, [], [1,2,"3"], [0,0,float("nan")], [-1,2,3], [True,2,3], [256,2,3]):
             self.assertFalse(valid_rgb(rgb))
             self.assertIsNone(similarity(rgb, "glucose", "neg."))
@@ -29,16 +30,15 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(result["method"], "bright_low_saturation_white_balance_v1")
         self.assertEqual(len(result["gains"]), 3)
 
-    def test_ref0974_calibration_key_colors(self):
+    def test_ai_calibration_uses_manual_form_palette(self):
         from src.standards import CYBOW_11M_STANDARDS, CALIBRATION_SOURCE
-        self.assertIn("REF 0974", CALIBRATION_SOURCE)
-        def rgb(param, value):
-            return next(x["rgb"] for x in CYBOW_11M_STANDARDS[param] if x["value"] == value)
-        self.assertEqual(rgb("blood", "neg."), (190,179,38))
-        self.assertEqual(rgb("specific_gravity", "1.000"), (16,53,79))
-        self.assertEqual(rgb("specific_gravity", "1.030"), (169,130,52))
-        self.assertEqual(rgb("ascorbic_acid", "neg."), (29,97,102))
-        self.assertEqual(rgb("ascorbic_acid", "++40(2.4)"), (173,167,30))
+        self.assertIn("shared by manual UI and AI calibration", CALIBRATION_SOURCE)
+        for param, colors in MANUAL_FORM_COLORS.items():
+            self.assertEqual(
+                [tuple(item["rgb"]) for item in CYBOW_11M_STANDARDS[param]],
+                [tuple(rgb) for rgb in colors],
+                param,
+            )
 
     def test_similarity_bounds(self):
         for n in range(256):
@@ -46,9 +46,10 @@ class ImageTests(unittest.TestCase):
             self.assertTrue(0 <= score <= 100)
 
     def test_pixels_are_sampled(self):
-        image = Image.new("RGB", (200,200), (92,151,185))
+        color = tuple(MANUAL_FORM_COLORS["glucose"][0])
+        image = Image.new("RGB", (200,200), color)
         result = sample_regions(image, {"glucose":[.1,.1,.4,.4]}, {"glucose":"neg."})
-        self.assertEqual(result["detected_rgb"]["glucose"], [92,151,185])
+        self.assertEqual(result["detected_rgb"]["glucose"], list(color))
         self.assertEqual(result["color_similarity_scores"]["glucose"], 100)
 
     def test_invalid_and_overlapping_regions(self):
