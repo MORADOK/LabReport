@@ -56,6 +56,7 @@ from src.standards import ALLOWED_VALUES
 from src.image_diagnostics import prepare_image, image_quality, sample_regions
 from src.strip_geometry import detect_geometry_regions
 from src.ai_guided_regions import detect_ai_guided_regions
+from src.strip_signal import detect_strip_signal_regions
 
 # ---------------------------------------------------------
 # 🖼️ Image Optimization (In-Memory Processing - Cloud-Native)
@@ -212,27 +213,37 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             return
         ai_regions = raw_data.get("pad_regions")
         geometry = detect_geometry_regions(image, ai_regions)
+        signal = None
         guided = None
         if geometry.get("accepted"):
             selected_regions = geometry.get("regions")
             region_source = geometry.get("source")
         else:
-            # Never sample the model-proposed boxes directly. They are semantic
-            # proposals only and are not pixel-accurate enough for color reading.
-            guided = detect_ai_guided_regions(image, ai_regions)
-            if not guided.get("accepted"):
-                logger.warning("Rejected image localization: geometry=%s guided=%s", geometry, guided)
-                raise ValueError("ไม่สามารถระบุตำแหน่งแผ่นสีทั้ง 11 ช่องจากพิกเซลได้อย่างปลอดภัย กรุณาถ่ายภาพใหม่ให้แถบตรวจใหญ่และชัดเจนขึ้น")
-            selected_regions = guided.get("regions")
-            region_source = guided.get("source")
+            # Second stage: optimize one coherent strip model from a 1-D visual
+            # signal. This is preferred over independent per-pad local searches.
+            signal = detect_strip_signal_regions(image, ai_regions)
+            if signal.get("accepted"):
+                selected_regions = signal.get("regions")
+                region_source = signal.get("source")
+            else:
+                # Tertiary fallback: independent pixel anchors with strict residual
+                # gating. AI boxes are never sampled directly.
+                guided = detect_ai_guided_regions(image, ai_regions)
+                if not guided.get("accepted"):
+                    logger.warning("Rejected image localization: geometry=%s signal=%s guided=%s", geometry, signal, guided)
+                    raise ValueError("ไม่สามารถระบุตำแหน่งแผ่นสีทั้ง 11 ช่องจากพิกเซลได้อย่างปลอดภัย กรุณาถ่ายภาพใหม่ให้แถบตรวจใหญ่และชัดเจนขึ้น")
+                selected_regions = guided.get("regions")
+                region_source = guided.get("source")
         diagnostics = sample_regions(image, selected_regions, data)
         diagnostics["image_quality"] = quality
         diagnostics["geometry_detection"] = geometry
+        diagnostics["signal_detection"] = signal
         diagnostics["guided_detection"] = guided
         diagnostics["region_source"] = region_source
         logger.info("geometry_detection %s", json.dumps({
             "region_source": diagnostics["region_source"],
             "geometry": geometry,
+            "signal": signal,
             "guided": guided,
             "ai_pad_regions": ai_regions,
             "sampled_regions": diagnostics.get("sampled_regions"),
