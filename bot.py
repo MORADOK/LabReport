@@ -98,6 +98,18 @@ def extract_safe_float(value, default=0.0):
 # ---------------------------------------------------------
 # 🚀 Endpoints & LINE Webhook
 # ---------------------------------------------------------
+@app.on_event("startup")
+def initialize_database_schema():
+    """Apply idempotent schema migrations before accepting analysis jobs."""
+    try:
+        db_handler.init_db()
+        logger.info("Database schema migration check completed")
+    except Exception as exc:
+        # Keep health endpoint available, but surface the problem clearly in logs;
+        # inserts will still fail closed rather than silently losing diagnostics.
+        logger.error("Database schema migration check failed: %s", exc)
+
+
 @app.get("/")
 def keep_alive():
     return {"status": "LHome Bot is awake and running!"}
@@ -249,15 +261,24 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             "sampled_regions": diagnostics.get("sampled_regions"),
             "detected_rgb": diagnostics.get("detected_rgb"),
             "normalized_rgb": diagnostics.get("normalized_rgb"),
-            "normalization": diagnostics.get("normalization")
+            "normalization": diagnostics.get("normalization"),
+            "result_fusion": diagnostics.get("result_fusion")
         }, ensure_ascii=False, allow_nan=False))
         if not diagnostics.get("roi_consistency", {}).get("accepted", True):
             logger.warning("Rejected implausible pad ROIs: %s", diagnostics.get("roi_consistency"))
             raise ValueError("ตำแหน่งช่องทดสอบไม่สอดคล้องกับสีในภาพ กรุณาถ่ายภาพใหม่ให้แถบตรวจชัดและใกล้ขึ้น")
-        if not diagnostics.get("pixel_crosscheck", {}).get("accepted", True):
-            mismatches = ", ".join(diagnostics["pixel_crosscheck"].get("mismatches", []))
-            logger.warning("Rejected AI/pixel mismatch: %s", diagnostics.get("pixel_crosscheck"))
-            raise ValueError(f"ผล AI ขัดแย้งกับสีที่ตรวจพบในช่อง: {mismatches} กรุณาถ่ายภาพใหม่หรือให้ผู้ตรวจสอบผล")
+        fusion = diagnostics.get("result_fusion", {})
+        if not fusion.get("accepted", False):
+            review = ", ".join(fusion.get("review", []))
+            logger.warning("Rejected unresolved pixel/AI fusion: %s", fusion)
+            raise ValueError(f"ยังไม่สามารถยืนยันค่าสีได้อย่างปลอดภัยในช่อง: {review} กรุณาถ่ายภาพใหม่หรือให้ผู้ตรวจสอบผล")
+        # Pixel evidence may safely correct an AI label only when calibrated-distance
+        # and separation-margin gates pass. Blood remains AI-led because spotted
+        # non-hemolysis patterns are not represented by flat RGB references.
+        resolved = fusion.get("resolved_results", {})
+        for param in ALLOWED_VALUES:
+            if param in resolved and resolved[param] is not None:
+                data[param] = resolved[param]
         if len(diagnostics["detected_rgb"]) != len(ALLOWED_VALUES):
             line_bot_api.push_message(user_id, TextSendMessage(
                 text="ระบุตำแหน่งแถบสีได้ไม่ครบ กรุณาถ่ายแผ่น CYBOW 11M ให้ใกล้ขึ้น เห็นครบทั้ง 11 ช่อง และหลีกเลี่ยงแสงสะท้อน"))
@@ -313,7 +334,7 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
         logger.error(f"Error processing image: {error_msg}")
 
         if ("ตำแหน่งแผ่นสี" in error_msg or "ตำแหน่งช่องทดสอบ" in error_msg or
-                "ผล AI ขัดแย้งกับสี" in error_msg):
+                "ผล AI ขัดแย้งกับสี" in error_msg or "ยังไม่สามารถยืนยันค่าสี" in error_msg):
             user_message = "📷 ยังอ่านตำแหน่ง/สีของแถบ CYBOW 11M ได้ไม่ปลอดภัย\n" + error_msg
         else:
             user_message = "❌ ระบบวิเคราะห์ขัดข้อง กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ"

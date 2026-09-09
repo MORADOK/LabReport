@@ -197,19 +197,63 @@ def detect_strip_signal_regions(image, ai_regions):
     if total_perp_drift > pitch*0.22:
         return {"accepted": False, "reason": "strip slope correction is excessive", "regions": {}}
 
+    # Final constrained per-pad refinement. The global model establishes semantic
+    # order and pitch; each pad may then move only within 0.18 pitch, preventing a
+    # jump to its neighbour while correcting perspective/end-pad offsets.
+    refined_centers = []
+    local_offsets = []
+    for i, center in enumerate(best["centers"]):
+        local_best = None
+        for along_i in range(-3, 4):
+            along = pitch * 0.06 * along_i
+            for perp_i in range(-2, 3):
+                perp = pitch * 0.06 * perp_i
+                c = _point(center, u, v, along, perp)
+                if not (half_along+2 < c[0] < image.width-half_along-2 and
+                        half_perp+2 < c[1] < image.height-half_perp-2):
+                    continue
+                sig = _pad_signal(image, c, u, v, pitch, half_along, half_perp)
+                if sig is None:
+                    continue
+                # Distance regularization keeps pale pads near the coherent model.
+                objective = sig["score"] - 0.24*abs(along) - 0.18*abs(perp)
+                if local_best is None or objective > local_best[0]:
+                    local_best = (objective, c, along, perp, sig)
+        if local_best is None:
+            refined_centers.append(center)
+            local_offsets.append((0.0, 0.0))
+        else:
+            refined_centers.append(local_best[1])
+            local_offsets.append((local_best[2], local_best[3]))
+
+    # Adjacent local corrections must stay smooth. A sharp correction jump is a
+    # sign that a colourful neighbour/background object was selected.
+    along_offsets = [o[0] for o in local_offsets]
+    perp_offsets = [o[1] for o in local_offsets]
+    max_along_jump = max((abs(b-a) for a,b in zip(along_offsets, along_offsets[1:])), default=0.0)
+    max_perp_jump = max((abs(b-a) for a,b in zip(perp_offsets, perp_offsets[1:])), default=0.0)
+    if max_along_jump > pitch*0.18 or max_perp_jump > pitch*0.18:
+        return {"accepted": False, "reason": "local pad refinement is not spatially coherent",
+                "regions": {}, "pitch_pixels": round(pitch, 1),
+                "max_local_along_jump_pixels": round(max_along_jump, 1),
+                "max_local_perp_jump_pixels": round(max_perp_jump, 1)}
+
     regions = {}
-    for param, (cx, cy) in zip(PARAMETERS, best["centers"]):
+    for param, (cx, cy) in zip(PARAMETERS, refined_centers):
         regions[param] = [max(0.0, (cx-half_along)/image.width),
                           max(0.0, (cy-half_perp)/image.height),
                           min(1.0, (cx+half_along)/image.width),
                           min(1.0, (cy+half_perp)/image.height)]
 
     return {"accepted": True, "reason": None, "regions": regions,
-            "source": "joint_strip_signal_v2_phase_locked", "pitch_pixels": round(pitch, 1),
+            "source": "joint_strip_signal_v3_local_refined", "pitch_pixels": round(pitch, 1),
             "strong_pad_count": best["strong"], "visual_score": round(best["visual"], 1),
             "model_margin": round(margin, 2), "median_pad_contrast": round(median_contrast, 1),
             "median_pad_saturation": round(median_sat, 1),
             "phase_pixels": round(best["phase"], 1),
             "perpendicular_offset_pixels": round(best["perp0"], 1),
             "perpendicular_step_pixels_per_pad": round(best["perp_step"], 2),
-            "semantic_axis_step_pixels": [round(dx, 2), round(dy, 2)]}
+            "semantic_axis_step_pixels": [round(dx, 2), round(dy, 2)],
+            "local_offsets_pixels": [[round(a,1), round(b,1)] for a,b in local_offsets],
+            "max_local_along_jump_pixels": round(max_along_jump,1),
+            "max_local_perp_jump_pixels": round(max_perp_jump,1)}

@@ -33,7 +33,7 @@ class StripSignalTests(unittest.TestCase):
         img, boxes = self._fixture(slope=2.6)
         result = detect_strip_signal_regions(img, boxes)
         self.assertTrue(result["accepted"], result)
-        self.assertEqual(result["source"], "joint_strip_signal_v2_phase_locked")
+        self.assertEqual(result["source"], "joint_strip_signal_v3_local_refined")
         self.assertLessEqual(abs(result["phase_pixels"]), result["pitch_pixels"] * 0.12 + 0.2)
         self.assertGreaterEqual(result["strong_pad_count"], 5)
         self.assertEqual(len(result["regions"]), 11)

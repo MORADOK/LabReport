@@ -92,6 +92,70 @@ def _pixel_crosscheck(results, rgb):
         }
     return {"checks": checks, "mismatches": mismatches, "accepted": not mismatches}
 
+
+def reconcile_results(results, rgb):
+    """Fuse calibrated pixel evidence with AI labels conservatively.
+
+    Pixel evidence is primary only when the nearest reference is both close enough
+    and clearly separated from the runner-up. AI is used as a tie-breaker for
+    ambiguous colors. Unverified pattern-based parameters (e.g. blood) remain AI-led.
+    """
+    resolved = dict(results)
+    decisions = {}
+    review = []
+    for param in ALLOWED_VALUES:
+        if param in UNVERIFIED_COLOR_PARAMETERS:
+            decisions[param] = {"source": "ai_pattern_unverified", "value": results.get(param)}
+            continue
+        detected = rgb.get(param)
+        refs = CYBOW_11M_STANDARDS.get(param, [])
+        if detected is None or not refs:
+            review.append(param)
+            decisions[param] = {"source": "unresolved", "reason": "missing pixel/reference data"}
+            continue
+        ranked = sorted((math.dist(detected, ref["rgb"]), ref["value"]) for ref in refs)
+        nearest_distance, nearest = ranked[0]
+        second_distance = ranked[1][0] if len(ranked) > 1 else float("inf")
+        margin = second_distance - nearest_distance
+        ai_value = results.get(param)
+
+        # Strong pixel evidence may correct an AI label. Thresholds are deliberately
+        # conservative because current references are photo-derived, not instrument-certified.
+        if nearest_distance <= 90 and margin >= 14:
+            resolved[param] = nearest
+            source = "pixel_primary" if nearest != ai_value else "pixel_ai_agree"
+            decisions[param] = {"source": source, "value": nearest, "ai_value": ai_value,
+                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1)}
+            continue
+
+        # Moderate pixel evidence is accepted when AI agrees with the same class.
+        if nearest_distance <= 120 and ai_value == nearest and margin >= 6:
+            resolved[param] = ai_value
+            decisions[param] = {"source": "ai_pixel_agree_moderate", "value": ai_value,
+                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1)}
+            continue
+
+        # If AI selected a neighbouring reference that is almost tied with the pixel
+        # nearest (<12 RGB-distance points), treat the color as ambiguous and retain
+        # the AI label rather than falsely declaring a conflict.
+        selected_ref = next((ref for ref in refs if ref["value"] == ai_value), None)
+        if selected_ref is not None:
+            selected_distance = math.dist(detected, selected_ref["rgb"])
+            if selected_distance <= 110 and selected_distance - nearest_distance <= 12:
+                resolved[param] = ai_value
+                decisions[param] = {"source": "ai_tiebreak_ambiguous_pixel", "value": ai_value,
+                                    "pixel_nearest": nearest,
+                                    "selected_distance": round(selected_distance,1),
+                                    "nearest_distance": round(nearest_distance,1),
+                                    "distance_gap": round(selected_distance-nearest_distance,1)}
+                continue
+
+        review.append(param)
+        decisions[param] = {"source": "review", "ai_value": ai_value, "pixel_nearest": nearest,
+                            "nearest_distance": round(nearest_distance,1), "margin": round(margin,1)}
+    return {"resolved_results": resolved, "decisions": decisions,
+            "review": review, "accepted": not review}
+
 def sample_regions(image, regions, results):
     regions = regions if isinstance(regions, dict) else {}
     normalization = estimate_neutral_reference(image)
@@ -130,11 +194,13 @@ def sample_regions(image, regions, results):
         "reason": None if (len(rgb) < 11 or spread >= 28) else "pad regions have implausibly low color variation"
     }
     crosscheck = _pixel_crosscheck(results, normalized_rgb)
+    fusion = reconcile_results(results, normalized_rgb)
     return {
         "detected_rgb": rgb, "normalized_rgb": normalized_rgb, "normalization": normalization,
         "pad_regions": boxes, "sampled_regions": sampled_boxes,
         "median_saturation": saturation, "color_similarity_scores": scores,
         "roi_consistency": roi_consistency, "pixel_crosscheck": crosscheck,
+        "result_fusion": fusion,
         "rgb_source": "pixel_median_center_shrunk_model_roi",
         "normalized_rgb_source": "white_balance_to_ref0974_neutral", "reference_calibrated": True
     }
