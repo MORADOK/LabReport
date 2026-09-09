@@ -262,6 +262,7 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             "detected_rgb": diagnostics.get("detected_rgb"),
             "normalized_rgb": diagnostics.get("normalized_rgb"),
             "normalization": diagnostics.get("normalization"),
+            "roi_quality": diagnostics.get("roi_quality"),
             "result_fusion": diagnostics.get("result_fusion")
         }, ensure_ascii=False, allow_nan=False))
         if not diagnostics.get("roi_consistency", {}).get("accepted", True):

@@ -2,6 +2,7 @@
 import io
 import math
 from PIL import Image, ImageOps, ImageStat, ImageFilter
+from statistics import median
 from src.standards import ALLOWED_VALUES, CYBOW_11M_STANDARDS, UNVERIFIED_COLOR_PARAMETERS
 from src.cybow_reference import calculate_confidence_from_rgb
 
@@ -31,6 +32,84 @@ def estimate_neutral_reference(image):
             "gains": [round(x, 4) for x in gains],
             "target_neutral": list(CALIBRATION_NEUTRAL_RGB),
             "method": "bright_low_saturation_white_balance_v1"}
+
+
+
+def estimate_local_carrier_reference(image, regions):
+    """Estimate white balance from carrier gaps immediately beside reagent pads.
+
+    Lateral gap samples remain on the physical strip and are much less likely than
+    above/below bands to include tablecloth/background pixels.
+    """
+    if not isinstance(regions, dict):
+        return estimate_neutral_reference(image)
+    samples=[]
+    for box in regions.values():
+        if not (isinstance(box,list) and len(box)==4):
+            continue
+        x1,y1,x2,y2=box
+        if not all(isinstance(v,(int,float)) and math.isfinite(v) for v in box):
+            continue
+        px1,px2=x1*image.width,x2*image.width
+        py1,py2=y1*image.height,y2*image.height
+        w=max(3.0,px2-px1); h=max(3.0,py2-py1)
+        # sample narrow lateral gaps close to the pad edge; stay vertically within carrier
+        bands=[
+            (px1-0.42*w, py1+0.18*h, px1-0.10*w, py2-0.18*h),
+            (px2+0.10*w, py1+0.18*h, px2+0.42*w, py2-0.18*h),
+        ]
+        for bx1,by1,bx2,by2 in bands:
+            bx1=max(0,int(round(bx1))); by1=max(0,int(round(by1)))
+            bx2=min(image.width,int(round(bx2))); by2=min(image.height,int(round(by2)))
+            if bx2-bx1 < 3 or by2-by1 < 3: continue
+            roi=image.crop((bx1,by1,bx2,by2)); hsv=roi.convert('HSV')
+            for rgb_px,hsv_px in zip(roi.getdata(),hsv.getdata()):
+                if hsv_px[1] <= 72 and 70 <= hsv_px[2] <= 245:
+                    samples.append(rgb_px)
+    min_needed=max(60,len(regions)*8)
+    if len(samples) < min_needed:
+        fallback=estimate_neutral_reference(image)
+        fallback['fallback_from']='strip_local_carrier_white_balance_v2'
+        return fallback
+    channels=list(zip(*samples))
+    observed=[float(sorted(ch)[len(ch)//2]) for ch in channels]
+    gains=[max(0.72,min(1.32,target/max(obs,1.0))) for target,obs in zip(CALIBRATION_NEUTRAL_RGB,observed)]
+    accepted=all(0.72 < g < 1.32 for g in gains)
+    return {
+        'accepted':accepted,
+        'reason':None if accepted else 'local carrier white-balance correction exceeds safe limits',
+        'observed_neutral':[round(x,1) for x in observed],
+        'gains':[round(x,4) for x in gains],
+        'target_neutral':list(CALIBRATION_NEUTRAL_RGB),
+        'sample_count':len(samples),
+        'method':'strip_local_carrier_white_balance_v2'
+    }
+
+
+def _roi_quality(image, box, inner, rgb):
+    """Measure whether a sampling ROI visually behaves like a reagent pad."""
+    x1,y1,x2,y2=box
+    ix1,iy1,ix2,iy2=inner
+    cx=(ix1+ix2)*0.5*image.width; cy=(iy1+iy2)*0.5*image.height
+    iw=max(3.0,(ix2-ix1)*image.width); ih=max(3.0,(iy2-iy1)*image.height)
+    def med_at(px,py,w,h):
+        b=(max(0,int(px-w/2)),max(0,int(py-h/2)),min(image.width,int(px+w/2)),min(image.height,int(py+h/2)))
+        if b[2]-b[0] < 3 or b[3]-b[1] < 3: return None
+        r=image.crop(b)
+        return ImageStat.Stat(r).median
+    around=[]
+    for dx,dy in ((0,-0.9*ih),(0,0.9*ih),(-0.8*iw,0),(0.8*iw,0)):
+        m=med_at(cx+dx,cy+dy,max(3,iw*0.45),max(3,ih*0.45))
+        if m is not None: around.append(m)
+    contrast=median([math.dist(rgb,a) for a in around]) if around else 0.0
+    appearance=_pixel_appearance(rgb)
+    carrier_like=(contrast < 12 and appearance['chroma'] < 18 and appearance['saturation_proxy'] < 28)
+    return {
+        'contrast_to_surround':round(contrast,1),
+        'chroma':round(appearance['chroma'],1),
+        'saturation_proxy':round(appearance['saturation_proxy'],1),
+        'carrier_like':carrier_like
+    }
 
 def normalize_rgb(rgb, normalization):
     gains = normalization.get("gains", [1.0, 1.0, 1.0])
@@ -241,8 +320,8 @@ def reconcile_results(results, rgb):
 
 def sample_regions(image, regions, results):
     regions = regions if isinstance(regions, dict) else {}
-    normalization = estimate_neutral_reference(image)
-    rgb, normalized_rgb, boxes, sampled_boxes, scores, saturation = {}, {}, {}, {}, {}, {}
+    normalization = estimate_local_carrier_reference(image, regions)
+    rgb, normalized_rgb, boxes, sampled_boxes, scores, saturation, roi_quality = {}, {}, {}, {}, {}, {}, {}
     for param in ALLOWED_VALUES:
         box = regions.get(param)
         if not isinstance(box, list) or len(box) != 4 or not all(
@@ -261,6 +340,7 @@ def sample_regions(image, regions, results):
         roi = image.crop(bounds)
         rgb[param] = ImageStat.Stat(roi).median
         normalized_rgb[param] = normalize_rgb(rgb[param], normalization)
+        roi_quality[param] = _roi_quality(image, box, inner, rgb[param])
         hsv = roi.convert("HSV")
         saturation[param] = round(ImageStat.Stat(hsv).median[1], 1)
         boxes[param] = box
@@ -278,12 +358,38 @@ def sample_regions(image, regions, results):
     }
     crosscheck = _pixel_crosscheck(results, normalized_rgb)
     fusion = reconcile_results(results, normalized_rgb)
+    # Reclassify obvious carrier/background samples as localization failures for
+    # parameters whose entire reference scale is chromatic. This keeps geometry
+    # problems separate from genuine color ambiguity.
+    localization_review = []
+    for param, quality in roi_quality.items():
+        refs = CYBOW_11M_STANDARDS.get(param, [])
+        if not refs or not quality.get("carrier_like"):
+            continue
+        min_ref_chroma = min((max(ref["rgb"])-min(ref["rgb"]) for ref in refs), default=0)
+        if min_ref_chroma >= 22 and param not in UNVERIFIED_COLOR_PARAMETERS:
+            localization_review.append(param)
+            if param not in fusion["review"]:
+                fusion["review"].append(param)
+            if param in fusion.get("borderline", []):
+                fusion["borderline"].remove(param)
+            fusion["decisions"][param] = {
+                "source": "localization_review_carrier_like_roi",
+                "confidence_level": "review",
+                "reason": "ROI resembles strip carrier/background instead of reagent pad",
+                **quality
+            }
+    if localization_review:
+        fusion["accepted"] = False
+        fusion["overall_status"] = "review"
+        fusion["localization_review"] = localization_review
     return {
         "detected_rgb": rgb, "normalized_rgb": normalized_rgb, "normalization": normalization,
         "pad_regions": boxes, "sampled_regions": sampled_boxes,
         "median_saturation": saturation, "color_similarity_scores": scores,
+        "roi_quality": roi_quality,
         "roi_consistency": roi_consistency, "pixel_crosscheck": crosscheck,
         "result_fusion": fusion,
         "rgb_source": "pixel_median_center_shrunk_model_roi",
-        "normalized_rgb_source": "white_balance_to_ref0974_neutral", "reference_calibrated": True
+        "normalized_rgb_source": normalization.get("method", "unknown"), "reference_calibrated": True
     }
