@@ -55,6 +55,7 @@ user_states = {}
 from src.standards import ALLOWED_VALUES
 from src.image_diagnostics import prepare_image, image_quality, sample_regions
 from src.strip_geometry import detect_geometry_regions
+from src.ai_guided_regions import detect_ai_guided_regions
 
 # ---------------------------------------------------------
 # 🖼️ Image Optimization (In-Memory Processing - Cloud-Native)
@@ -211,16 +212,28 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             return
         ai_regions = raw_data.get("pad_regions")
         geometry = detect_geometry_regions(image, ai_regions)
-        # Pixel geometry is primary when a safe 11-pad lattice can be fitted.
-        # AI regions remain a fallback and help resolve strip direction.
-        selected_regions = geometry.get("regions") if geometry.get("accepted") else ai_regions
+        guided = None
+        if geometry.get("accepted"):
+            selected_regions = geometry.get("regions")
+            region_source = geometry.get("source")
+        else:
+            # Never sample the model-proposed boxes directly. They are semantic
+            # proposals only and are not pixel-accurate enough for color reading.
+            guided = detect_ai_guided_regions(image, ai_regions)
+            if not guided.get("accepted"):
+                logger.warning("Rejected image localization: geometry=%s guided=%s", geometry, guided)
+                raise ValueError("ไม่สามารถระบุตำแหน่งแผ่นสีทั้ง 11 ช่องจากพิกเซลได้อย่างปลอดภัย กรุณาถ่ายภาพใหม่ให้แถบตรวจใหญ่และชัดเจนขึ้น")
+            selected_regions = guided.get("regions")
+            region_source = guided.get("source")
         diagnostics = sample_regions(image, selected_regions, data)
         diagnostics["image_quality"] = quality
         diagnostics["geometry_detection"] = geometry
-        diagnostics["region_source"] = geometry.get("source") if geometry.get("accepted") else "ai_fallback"
+        diagnostics["guided_detection"] = guided
+        diagnostics["region_source"] = region_source
         logger.info("geometry_detection %s", json.dumps({
             "region_source": diagnostics["region_source"],
             "geometry": geometry,
+            "guided": guided,
             "ai_pad_regions": ai_regions,
             "sampled_regions": diagnostics.get("sampled_regions"),
             "detected_rgb": diagnostics.get("detected_rgb"),
@@ -288,7 +301,9 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
         error_msg = str(e)
         logger.error(f"Error processing image: {error_msg}")
 
-        line_bot_api.push_message(
-            user_id,
-            TextSendMessage(text="❌ ระบบวิเคราะห์ขัดข้อง กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ")
-        )
+        if ("ตำแหน่งแผ่นสี" in error_msg or "ตำแหน่งช่องทดสอบ" in error_msg or
+                "ผล AI ขัดแย้งกับสี" in error_msg):
+            user_message = "📷 ยังอ่านตำแหน่ง/สีของแถบ CYBOW 11M ได้ไม่ปลอดภัย\n" + error_msg
+        else:
+            user_message = "❌ ระบบวิเคราะห์ขัดข้อง กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ"
+        line_bot_api.push_message(user_id, TextSendMessage(text=user_message))
