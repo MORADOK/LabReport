@@ -11,7 +11,7 @@ class GeometryTests(unittest.TestCase):
         draw.rectangle((80, 145, 920, 215), fill=(215, 215, 210))
         params = list(ALLOWED_VALUES)
         colors = [CYBOW_11M_STANDARDS[p][0]["rgb"] for p in params]
-        sequence = [(205, 202, 195)] + colors  # compensation + 11 reagents
+        sequence = [(205, 202, 195)] + colors
         if reverse:
             sequence = list(reversed(sequence))
         centers = [150 + i * 58 for i in range(12)]
@@ -28,16 +28,16 @@ class GeometryTests(unittest.TestCase):
         image, ai = self._synthetic_strip(False)
         result = detect_geometry_regions(image, ai)
         self.assertTrue(result["accepted"], result)
-        self.assertEqual(result["source"], "pixel_geometry_lattice_v1")
+        self.assertEqual(result["source"], "pixel_geometry_lattice_v2_anchor_refined")
         self.assertEqual(len(result["regions"]), 11)
         self.assertGreaterEqual(result["matched_components"], 8)
+        self.assertGreaterEqual(result["snapped_components"], 8)
+        self.assertLess(result["residual_ratio"], 0.18)
 
     def test_resolves_reverse_orientation(self):
         image, ai = self._synthetic_strip(True)
         result = detect_geometry_regions(image, ai)
         self.assertTrue(result["accepted"], result)
-        # Axis sign is arbitrary; semantic orientation is correct when urobilinogen
-        # lands near the AI urobilinogen endpoint even for a reversed physical strip.
         box = result["regions"]["urobilinogen"]
         detected_x = (box[0] + box[2]) / 2
         ai_box = ai["urobilinogen"]
