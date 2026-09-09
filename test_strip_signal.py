@@ -32,7 +32,7 @@ class StripSignalTests(unittest.TestCase):
         img, boxes = self._fixture(slope=2.6)
         result = detect_strip_signal_regions(img, boxes)
         self.assertTrue(result["accepted"], result)
-        self.assertEqual(result["source"], "joint_strip_signal_v5_endpoint_refined")
+        self.assertEqual(result["source"], "joint_strip_signal_v6_ascorbic_locked")
         self.assertLessEqual(abs(result["phase_pixels"]), result["pitch_pixels"] * 0.12 + 0.2)
         self.assertGreaterEqual(result["strong_pad_count"], 5)
         self.assertEqual(len(result["regions"]), 11)
@@ -72,8 +72,24 @@ class StripSignalTests(unittest.TestCase):
         draw.rectangle((cx-15, cy-20, cx+15, cy+20), fill=(35,95,100))
         result = detect_strip_signal_regions(img, boxes)
         self.assertTrue(result["accepted"], result)
-        self.assertEqual(result["source"], "joint_strip_signal_v5_endpoint_refined")
+        self.assertEqual(result["source"], "joint_strip_signal_v6_ascorbic_locked")
         self.assertEqual(len(result["endpoint_signal_gains"]), 2)
+
+    def test_ascorbic_endpoint_prefers_chromatic_pad_over_carrier(self):
+        img, boxes = self._fixture(slope=0.8)
+        draw = ImageDraw.Draw(img)
+        x0, y0, pitch = 180, 160, 72
+        nominal = x0 + pitch*10
+        cy = y0 + 0.8*(10-5)
+        # Neutralize nominal location, put the real chromatic end pad 0.28 pitch right.
+        draw.rectangle((nominal-17, cy-22, nominal+17, cy+22), fill=(220,220,216))
+        actual = nominal + int(round(pitch*0.28))
+        draw.rectangle((actual-15, cy-20, actual+15, cy+20), fill=(35,95,100))
+        result = detect_strip_signal_regions(img, boxes)
+        self.assertTrue(result["accepted"], result)
+        self.assertEqual(result["source"], "joint_strip_signal_v6_ascorbic_locked")
+        self.assertGreaterEqual(result["ascorbic_endpoint_quality"]["chroma"], 35)
+        self.assertFalse(result["ascorbic_endpoint_quality"]["carrier_like"])
 
     def test_blank_image_rejected(self):
         img = Image.new("RGB", (1200, 320), (220,220,220))

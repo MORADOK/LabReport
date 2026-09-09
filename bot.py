@@ -272,9 +272,10 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             review = ", ".join(fusion.get("review", []))
             logger.warning("Rejected unresolved pixel/AI fusion: %s", fusion)
             raise ValueError(f"ยังไม่สามารถยืนยันค่าสีได้อย่างปลอดภัยในช่อง: {review} กรุณาถ่ายภาพใหม่หรือให้ผู้ตรวจสอบผล")
+        borderline = fusion.get("borderline", [])
         # Pixel evidence may safely correct an AI label only when calibrated-distance
-        # and separation-margin gates pass. Blood remains AI-led because spotted
-        # non-hemolysis patterns are not represented by flat RGB references.
+        # and perceptual-distance gates pass. Borderline values are retained with
+        # an explicit review warning; Blood remains AI-led for spotted patterns.
         resolved = fusion.get("resolved_results", {})
         for param in ALLOWED_VALUES:
             if param in resolved and resolved[param] is not None:
@@ -285,8 +286,12 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             return
         data.update(diagnostics)
         # Build the summary from validated labels so it cannot contradict the saved values.
-        data["clinical_summary"] = "; ".join(p + ": " + data[p] for p in ALLOWED_VALUES)
+        data["clinical_summary"] = "; ".join(
+            p + ": " + data[p] + (" [borderline]" if p in borderline else "")
+            for p in ALLOWED_VALUES)
         data["clinical_bullets"] = ["ผลอ่านจากภาพ ต้องตรวจยืนยันกับแผ่นตรวจจริง"]
+        if borderline:
+            data["clinical_bullets"].append("ค่าก้ำกึ่งที่ควรตรวจเทียบแถบจริง: " + ", ".join(borderline))
         logger.info("strip_diagnostics %s", json.dumps(diagnostics, ensure_ascii=False, allow_nan=False))
 
         # 6. บันทึกลง Database (ป้องกัน ValueError ด้วย extract_safe_float)
@@ -322,8 +327,9 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
             reply_msg = (
                 f"✅ บันทึกผลตรวจสำเร็จ!\n👤 คนไข้: {patient_name}\n\n"
                 f"📝 สรุปผล:\n{data.get('clinical_summary', '')}\n\n"
-                "คะแนนความแม่นยำ: ยังไม่มีข้อมูลสอบเทียบ\n\n"
-                f"สามารถกดดูรายงาน PDF ฉบับเต็มได้ที่ระบบ LHome Dashboard ครับ!"
+                "คะแนนความแม่นยำ: ยังไม่มีข้อมูลสอบเทียบ\n"
+                + (("⚠️ ค่าก้ำกึ่งจากภาพ: " + ", ".join(borderline) + "\nควรเทียบกับแถบจริงก่อนใช้ประกอบการตัดสินใจ\n\n") if borderline else "\n")
+                + f"สามารถกดดูรายงาน PDF ฉบับเต็มได้ที่ระบบ LHome Dashboard ครับ!"
             )
             line_bot_api.push_message(user_id, TextSendMessage(text=reply_msg))
         else:

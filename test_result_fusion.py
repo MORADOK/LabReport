@@ -60,6 +60,25 @@ class ResultFusionTests(unittest.TestCase):
         self.assertFalse(fused["accepted"])
         self.assertIn("ph", fused["review"])
 
+    def test_close_low_margin_color_is_borderline_not_review(self):
+        results, rgb = self._baseline()
+        # SG sample close to 1.025 with modest separation from 1.030.
+        results["specific_gravity"] = "1.015"
+        rgb["specific_gravity"] = [150, 126, 54]
+        fused = reconcile_results(results, rgb)
+        self.assertTrue(fused["accepted"], fused)
+        self.assertIn("specific_gravity", fused["borderline"])
+        self.assertEqual(fused["resolved_results"]["specific_gravity"], "1.025")
+        self.assertEqual(fused["decisions"]["specific_gravity"]["confidence_level"], "borderline")
+
+    def test_borderline_does_not_rescue_far_color(self):
+        results, rgb = self._baseline()
+        results["protein"] = "neg."
+        rgb["protein"] = [220, 220, 220]
+        fused = reconcile_results(results, rgb)
+        self.assertFalse(fused["accepted"])
+        self.assertIn("protein", fused["review"])
+
 
 if __name__ == "__main__":
     unittest.main()

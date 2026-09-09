@@ -1,8 +1,9 @@
 """Joint strip-signal localizer for CYBOW 11M.
 
-AI proposals are optional semantic priors, never direct sampling ROIs. The localizer
-fits one coherent 11-pad model, then applies bounded local refinement. Missing AI
-boxes are tolerated when enough indexed semantic anchors remain.
+AI proposals are semantic priors, never direct sampling ROIs. The localizer fits
+one coherent 11-pad model, applies bounded local refinement, and gives the final
+ascorbic-acid endpoint a dedicated chroma/contrast search so carrier/background
+cannot masquerade as the last reagent pad.
 """
 import math
 from statistics import median
@@ -106,16 +107,10 @@ def _smooth_local_offsets(offsets, pitch):
 
 
 def _refine_endpoint(image, center, u, v, pitch, half_along, half_perp, baseline_offset):
-    """Wider but still bounded refinement for first/last reagent pads.
-
-    End pads are the most affected by perspective/fit extrapolation. Search up to
-    0.24 pitch, far below one full pad spacing, and only keep the candidate when it
-    materially improves the visual signal. This cannot jump to a neighbouring pad.
-    """
     base = _point(center, u, v, baseline_offset[0], baseline_offset[1])
     base_sig = _pad_signal(image, base, u, v, pitch, half_along, half_perp)
     base_score = base_sig["score"] if base_sig else -999.0
-    best = (base_score, baseline_offset[0], baseline_offset[1])
+    best = (base_score, baseline_offset[0], baseline_offset[1], base_sig)
     for along_i in range(-4, 5):
         along = pitch*0.06*along_i
         for perp_i in range(-3, 4):
@@ -131,11 +126,55 @@ def _refine_endpoint(image, center, u, v, pitch, half_along, half_perp, baseline
                 continue
             objective = sig["score"] - 0.20*abs(along) - 0.16*abs(perp)
             if objective > best[0]:
-                best = (objective, along, perp)
-    # Require a meaningful gain so a neutral background patch cannot pull an end pad.
+                best = (objective, along, perp, sig)
     if best[0] >= base_score + 6.0:
-        return (best[1], best[2]), round(best[0]-base_score, 1)
-    return baseline_offset, 0.0
+        return (best[1], best[2]), round(best[0]-base_score, 1), best[3]
+    return baseline_offset, 0.0, base_sig
+
+
+def _refine_ascorbic_endpoint(image, center, u, v, pitch, half_along, half_perp, baseline_offset):
+    """Dedicated final-pad search.
+
+    All three CYBOW ascorbic reference states are chromatic. A nearly neutral ROI
+    at the last slot is therefore much more likely carrier/background than the pad.
+    Search remains <0.36 pitch so it cannot reach the previous reagent slot.
+    """
+    base = _point(center, u, v, baseline_offset[0], baseline_offset[1])
+    base_sig = _pad_signal(image, base, u, v, pitch, half_along, half_perp)
+    if base_sig is None:
+        base_objective = -999.0
+    else:
+        base_objective = (base_sig["score"] + 0.55*base_sig["chroma"] +
+                          0.25*base_sig["contrast"])
+    best = (base_objective, baseline_offset[0], baseline_offset[1], base_sig)
+    for along_i in range(-6, 7):
+        along = pitch*0.055*along_i
+        if abs(along) > pitch*0.34:
+            continue
+        for perp_i in range(-4, 5):
+            perp = pitch*0.055*perp_i
+            if abs(perp) > pitch*0.24:
+                continue
+            c = _point(center, u, v, along, perp)
+            if not (half_along+2 < c[0] < image.width-half_along-2 and
+                    half_perp+2 < c[1] < image.height-half_perp-2):
+                continue
+            sig = _pad_signal(image, c, u, v, pitch, half_along, half_perp)
+            if sig is None:
+                continue
+            objective = (sig["score"] + 0.55*sig["chroma"] + 0.25*sig["contrast"] -
+                         0.16*abs(along) - 0.14*abs(perp))
+            if objective > best[0]:
+                best = (objective, along, perp, sig)
+    best_sig = best[3]
+    base_chroma = base_sig["chroma"] if base_sig else 0.0
+    best_chroma = best_sig["chroma"] if best_sig else 0.0
+    best_contrast = best_sig["contrast"] if best_sig else 0.0
+    objective_gain = best[0] - base_objective
+    chroma_rescue = base_chroma < 25 and best_chroma >= 35 and best_contrast >= 10
+    if objective_gain >= 7.0 or chroma_rescue:
+        return (best[1], best[2]), round(objective_gain, 1), best_sig
+    return baseline_offset, 0.0, base_sig
 
 
 def detect_strip_signal_regions(image, ai_regions):
@@ -256,10 +295,11 @@ def detect_strip_signal_regions(image, ai_regions):
 
     offsets, reverted = _smooth_local_offsets(raw_offsets, pitch)
     endpoint_gains = [0.0, 0.0]
-    # End pads can be slightly misregistered by a line fit that is excellent in the middle.
-    for slot, gain_idx in ((0, 0), (10, 1)):
-        offsets[slot], endpoint_gains[gain_idx] = _refine_endpoint(
-            image, best["centers"][slot], u, v, pitch, half_along, half_perp, offsets[slot])
+    endpoint_signals = [None, None]
+    offsets[0], endpoint_gains[0], endpoint_signals[0] = _refine_endpoint(
+        image, best["centers"][0], u, v, pitch, half_along, half_perp, offsets[0])
+    offsets[10], endpoint_gains[1], endpoint_signals[1] = _refine_ascorbic_endpoint(
+        image, best["centers"][10], u, v, pitch, half_along, half_perp, offsets[10])
 
     refined_centers = [_point(c, u, v, a, p) for c, (a, p) in zip(best["centers"], offsets)]
     max_along_jump = max((abs(b[0]-a[0]) for a,b in zip(offsets, offsets[1:])), default=0.0)
@@ -272,8 +312,17 @@ def detect_strip_signal_regions(image, ai_regions):
                           min(1.0, (cx+half_along)/image.width),
                           min(1.0, (cy+half_perp)/image.height)]
 
+    asc_sig = endpoint_signals[1] or _pad_signal(image, refined_centers[10], u, v, pitch, half_along, half_perp)
+    asc_quality = None if asc_sig is None else {
+        "chroma": round(asc_sig["chroma"], 1),
+        "contrast": round(asc_sig["contrast"], 1),
+        "saturation": round(asc_sig["sat"], 1),
+        "visual_score": round(asc_sig["score"], 1),
+        "carrier_like": bool(asc_sig["chroma"] < 22 and asc_sig["contrast"] < 9),
+    }
+
     return {"accepted": True, "reason": None, "regions": regions,
-            "source": "joint_strip_signal_v5_endpoint_refined", "pitch_pixels": round(pitch, 1),
+            "source": "joint_strip_signal_v6_ascorbic_locked", "pitch_pixels": round(pitch, 1),
             "semantic_anchor_count": len(indexed), "semantic_span_slots": indexed[-1][0]-indexed[0][0],
             "strong_pad_count": best["strong"], "visual_score": round(best["visual"], 1),
             "model_margin": round(margin, 2), "median_pad_contrast": round(median_contrast, 1),
@@ -285,5 +334,6 @@ def detect_strip_signal_regions(image, ai_regions):
             "local_offsets_pixels": [[round(a,1), round(b,1)] for a,b in offsets],
             "local_refinement_reverted_count": reverted,
             "endpoint_signal_gains": endpoint_gains,
+            "ascorbic_endpoint_quality": asc_quality,
             "max_local_along_jump_pixels": round(max_along_jump,1),
             "max_local_perp_jump_pixels": round(max_perp_jump,1)}

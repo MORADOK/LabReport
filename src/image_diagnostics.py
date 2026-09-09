@@ -101,6 +101,27 @@ def _pixel_appearance(rgb):
     return {"chroma": chroma, "mean": mean, "saturation_proxy": saturation_proxy}
 
 
+def _srgb_to_linear(v):
+    c = max(0.0, min(255.0, float(v))) / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def rgb_to_lab(rgb):
+    r, g, b = [_srgb_to_linear(v) for v in rgb]
+    x = (0.4124564*r + 0.3575761*g + 0.1804375*b) / 0.95047
+    y = (0.2126729*r + 0.7151522*g + 0.0721750*b)
+    z = (0.0193339*r + 0.1191920*g + 0.9503041*b) / 1.08883
+    d = 6/29
+    def f(t):
+        return t ** (1/3) if t > d**3 else t/(3*d*d) + 4/29
+    fx, fy, fz = f(x), f(y), f(z)
+    return (116*fy-16, 500*(fx-fy), 200*(fy-fz))
+
+
+def delta_e76(rgb1, rgb2):
+    return math.dist(rgb_to_lab(rgb1), rgb_to_lab(rgb2))
+
+
 def _is_positive_value(value):
     if value is None:
         return False
@@ -110,104 +131,113 @@ def _is_positive_value(value):
 
 
 def reconcile_results(results, rgb):
-    """Fuse calibrated pixel evidence with AI labels conservatively.
+    """Fuse pixel evidence with AI labels using confident/borderline/review states.
 
-    The key rule is absolute closeness before separation margin. A background-like
-    ROI must never become a confident positive result merely because the second-best
-    reference is even farther away.
+    Borderline means the measured color is genuinely close to a calibrated
+    reference but the neighboring class is also close. Borderline values may be
+    carried forward only with an explicit warning; distant or background-like
+    colors remain review and fail closed.
     """
     resolved = dict(results)
     decisions = {}
     review = []
+    borderline = []
     for param in ALLOWED_VALUES:
         if param in UNVERIFIED_COLOR_PARAMETERS:
-            decisions[param] = {"source": "ai_pattern_unverified", "value": results.get(param)}
+            decisions[param] = {"source": "ai_pattern_unverified", "value": results.get(param),
+                                "confidence_level": "pattern_unverified"}
             continue
         detected = rgb.get(param)
         refs = CYBOW_11M_STANDARDS.get(param, [])
         if detected is None or not refs:
             review.append(param)
-            decisions[param] = {"source": "unresolved", "reason": "missing pixel/reference data"}
+            decisions[param] = {"source": "unresolved", "reason": "missing pixel/reference data",
+                                "confidence_level": "review"}
             continue
 
-        ranked = sorted((math.dist(detected, ref["rgb"]), ref["value"]) for ref in refs)
-        nearest_distance, nearest = ranked[0]
+        ranked = sorted((math.dist(detected, ref["rgb"]), delta_e76(detected, ref["rgb"]), ref["value"])
+                        for ref in refs)
+        nearest_distance, nearest_de, nearest = ranked[0]
         second_distance = ranked[1][0] if len(ranked) > 1 else float("inf")
+        second_de = ranked[1][1] if len(ranked) > 1 else float("inf")
         margin = second_distance - nearest_distance
+        de_margin = second_de - nearest_de
         ai_value = results.get(param)
         appearance = _pixel_appearance(detected)
         low_signal = appearance["chroma"] < 18 and appearance["saturation_proxy"] < 28
         nearest_positive = _is_positive_value(nearest)
 
-        # Strong pixel override now requires both a clear margin and a genuinely
-        # close absolute match. Positive/trace calls from nearly neutral ROIs are
-        # forbidden because they usually indicate carrier/background sampling.
-        strong_distance_limit = 58.0
-        if nearest_distance <= strong_distance_limit and margin >= 14:
+        common = {"nearest_distance": round(nearest_distance,1), "margin": round(margin,1),
+                  "delta_e76": round(nearest_de,2), "delta_e_margin": round(de_margin,2),
+                  "chroma": round(appearance["chroma"],1)}
+
+        # Confident: close in both RGB and perceptual Lab space, with clear separation.
+        if nearest_distance <= 58 and nearest_de <= 18 and margin >= 14 and de_margin >= 2.5:
             if nearest_positive and low_signal:
                 review.append(param)
                 decisions[param] = {"source": "review_background_like_roi", "ai_value": ai_value,
-                                    "pixel_nearest": nearest,
-                                    "nearest_distance": round(nearest_distance,1),
-                                    "margin": round(margin,1),
-                                    "chroma": round(appearance["chroma"],1)}
+                                    "pixel_nearest": nearest, "confidence_level": "review", **common}
                 continue
             resolved[param] = nearest
             source = "pixel_primary" if nearest != ai_value else "pixel_ai_agree"
             decisions[param] = {"source": source, "value": nearest, "ai_value": ai_value,
-                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1),
-                                "chroma": round(appearance["chroma"],1)}
+                                "confidence_level": "confident", **common}
             continue
 
-        # Moderate evidence is accepted only on agreement, with tighter absolute
-        # distance and an explicit guard against neutral/background-like positives.
-        if nearest_distance <= 85 and ai_value == nearest and margin >= 6:
+        # Borderline: absolute color match is very good, but adjacent reference
+        # levels are close. This is common for SG/pH/protein transitions.
+        if nearest_distance <= 40 and nearest_de <= 13 and margin >= 5:
             if nearest_positive and low_signal:
                 review.append(param)
                 decisions[param] = {"source": "review_background_like_roi", "ai_value": ai_value,
-                                    "pixel_nearest": nearest,
-                                    "nearest_distance": round(nearest_distance,1),
-                                    "margin": round(margin,1),
-                                    "chroma": round(appearance["chroma"],1)}
+                                    "pixel_nearest": nearest, "confidence_level": "review", **common}
+                continue
+            resolved[param] = nearest
+            borderline.append(param)
+            decisions[param] = {"source": "pixel_borderline", "value": nearest, "ai_value": ai_value,
+                                "confidence_level": "borderline", **common}
+            continue
+
+        # Moderate agreement: AI and pixel choose the same class and both color
+        # metrics are within a reasonable envelope.
+        if nearest_distance <= 72 and nearest_de <= 22 and ai_value == nearest and margin >= 6:
+            if nearest_positive and low_signal:
+                review.append(param)
+                decisions[param] = {"source": "review_background_like_roi", "ai_value": ai_value,
+                                    "pixel_nearest": nearest, "confidence_level": "review", **common}
                 continue
             resolved[param] = ai_value
             decisions[param] = {"source": "ai_pixel_agree_moderate", "value": ai_value,
-                                "nearest_distance": round(nearest_distance,1), "margin": round(margin,1),
-                                "chroma": round(appearance["chroma"],1)}
+                                "confidence_level": "moderate", **common}
             continue
 
-        # AI tie-break is allowed only when both candidate colors are reasonably
-        # close to the measured pixel. This blocks very distant pH/protein style
-        # decisions observed in field logs.
         selected_ref = next((ref for ref in refs if ref["value"] == ai_value), None)
         if selected_ref is not None:
             selected_distance = math.dist(detected, selected_ref["rgb"])
-            if (selected_distance <= 72 and nearest_distance <= 72 and
-                    selected_distance - nearest_distance <= 10):
+            selected_de = delta_e76(detected, selected_ref["rgb"])
+            if (selected_distance <= 65 and selected_de <= 20 and nearest_distance <= 65 and
+                    selected_distance - nearest_distance <= 9):
                 if _is_positive_value(ai_value) and low_signal:
                     review.append(param)
                     decisions[param] = {"source": "review_background_like_roi", "ai_value": ai_value,
-                                        "pixel_nearest": nearest,
-                                        "selected_distance": round(selected_distance,1),
-                                        "nearest_distance": round(nearest_distance,1),
-                                        "chroma": round(appearance["chroma"],1)}
+                                        "pixel_nearest": nearest, "confidence_level": "review", **common}
                     continue
                 resolved[param] = ai_value
-                decisions[param] = {"source": "ai_tiebreak_ambiguous_pixel", "value": ai_value,
-                                    "pixel_nearest": nearest,
-                                    "selected_distance": round(selected_distance,1),
-                                    "nearest_distance": round(nearest_distance,1),
-                                    "distance_gap": round(selected_distance-nearest_distance,1),
-                                    "chroma": round(appearance["chroma"],1)}
+                borderline.append(param)
+                decisions[param] = {"source": "ai_tiebreak_borderline", "value": ai_value,
+                                    "pixel_nearest": nearest, "selected_distance": round(selected_distance,1),
+                                    "selected_delta_e76": round(selected_de,2),
+                                    "confidence_level": "borderline", **common}
                 continue
 
         review.append(param)
         decisions[param] = {"source": "review", "ai_value": ai_value, "pixel_nearest": nearest,
-                            "nearest_distance": round(nearest_distance,1), "margin": round(margin,1),
-                            "chroma": round(appearance["chroma"],1),
-                            "saturation_proxy": round(appearance["saturation_proxy"],1)}
+                            "confidence_level": "review", "saturation_proxy": round(appearance["saturation_proxy"],1),
+                            **common}
     return {"resolved_results": resolved, "decisions": decisions,
-            "review": review, "accepted": not review}
+            "review": review, "borderline": borderline,
+            "accepted": not review,
+            "overall_status": "review" if review else ("borderline" if borderline else "confident")}
 
 def sample_regions(image, regions, results):
     regions = regions if isinstance(regions, dict) else {}
