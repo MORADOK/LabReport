@@ -228,7 +228,22 @@ def get_data():
     return load_data()
 
 from src.access import require_dashboard_login
-require_dashboard_login(st)
+dashboard_user = require_dashboard_login(st)
+
+# Staff accounts may use Dashboard only.
+if dashboard_user.get("role") == "staff":
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] li:has(a[href="/"]),
+        [data-testid="stSidebarNav"] li:has(a[href$="/manual_entry"]),
+        [data-testid="stSidebarNav"] li:has(a[href*="manual_entry"]) {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def show_diagnostics(record):
     diagnostics = record.get('diagnostics')

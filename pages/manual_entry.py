@@ -10,7 +10,7 @@ from src.manual_form_colors import MANUAL_FORM_COLORS
 from src.manual_summary import summarize_manual_results
 
 st.set_page_config(page_title="CYBOW 11M Manual Entry", page_icon="🧪", layout="wide")
-require_dashboard_login()
+require_dashboard_login(allowed_roles={"admin"})
 
 PARAMETERS = [
     ("urobilinogen", "Urobilinogen", "mg/dL (µmol/L)"),
