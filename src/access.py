@@ -12,11 +12,26 @@ def _fingerprint(username: str, role: str, password: str) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _accounts():
+def _setting(name: str, default: str = "", st=None) -> str:
+    """Read Streamlit Secrets first, then environment variables."""
+    if st is not None:
+        try:
+            value = st.secrets.get(name)
+            if value is not None:
+                return str(value)
+        except Exception:
+            pass
+    value = os.getenv(name)
+    return str(value) if value is not None else default
+
+
+def _accounts(st=None):
     accounts = []
 
-    admin_password = os.getenv("DASHBOARD_PASSWORD", "")
-    admin_username = os.getenv("DASHBOARD_ADMIN_USERNAME", "admin").strip() or "admin"
+    admin_password = _setting("DASHBOARD_PASSWORD", "", st=st)
+    admin_username = (
+        _setting("DASHBOARD_ADMIN_USERNAME", "admin", st=st).strip() or "admin"
+    )
     if admin_password:
         accounts.append(
             {
@@ -27,8 +42,10 @@ def _accounts():
             }
         )
 
-    staff_username = os.getenv("DASHBOARD_STAFF_USERNAME", DEFAULT_STAFF_USERNAME).strip()
-    staff_password = os.getenv("DASHBOARD_STAFF_PASSWORD", "")
+    staff_username = _setting(
+        "DASHBOARD_STAFF_USERNAME", DEFAULT_STAFF_USERNAME, st=st
+    ).strip()
+    staff_password = _setting("DASHBOARD_STAFF_PASSWORD", "", st=st)
     if staff_username and staff_password:
         accounts.append(
             {
@@ -50,15 +67,14 @@ def current_dashboard_user(st):
 
 
 def require_dashboard_login(st=None, allowed_roles=None):
-    # Backward compatible with calls that omit st.
     if st is None:
         import streamlit as st
 
-    accounts = _accounts()
+    accounts = _accounts(st=st)
     if not accounts:
         st.error(
-            "ผู้ดูแลต้องตั้งค่า DASHBOARD_PASSWORD หรือ DASHBOARD_STAFF_PASSWORD "
-            "ก่อนเปิดใช้งานรายงาน"
+            "กรุณาตั้งค่า DASHBOARD_PASSWORD หรือ DASHBOARD_STAFF_PASSWORD "
+            "ใน Streamlit Secrets หรือ Environment Variables ก่อนใช้งาน"
         )
         st.stop()
 
