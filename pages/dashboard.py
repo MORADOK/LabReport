@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import sys
 import os
 import pandas as pd
@@ -9,6 +10,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
 from src.pdf_generator import create_pdf
+from src.report_preview import build_report_preview_html
 
 from src.analysis import load_data, create_trend_chart, parse_clinical_bullets, sanitize_thai_text
 from src.cybow_reference import CYBOW_11M_EXACT_REFERENCE, get_severity_level
@@ -345,14 +347,24 @@ else:
                     )
 
                     if pdf_bytes:
-                        st.download_button(
-                            label=f"⬇️ โหลด PDF: {target_record['notes']}",
-                            data=pdf_bytes,
-                            file_name=f"{case_id}_{target_record['notes'].replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True,
-                            type="primary"
+                        st.markdown("#### 👁️ ตัวอย่างรายงานก่อนพิมพ์")
+                        preview_html = build_report_preview_html(
+                            patient_name=target_record['notes'], case_id=case_id,
+                            date_str=str(target_record['date']), table_data=table_data,
+                            summary_text=sanitize_thai_text(db_summary), bullet_points=db_bullets
                         )
+                        components.html(preview_html, height=760, scrolling=True)
+                        st.caption("กดปุ่ม 🖨️ พิมพ์รายงาน ในตัวอย่างด้านบนเพื่อพิมพ์ได้ทันที โดยไม่ต้องดาวน์โหลดไฟล์ก่อน")
+                        dl_col, _ = st.columns([1, 2.2])
+                        with dl_col:
+                            st.download_button(
+                                label="⬇️ ดาวน์โหลด PDF",
+                                data=pdf_bytes,
+                                file_name=f"{case_id}_{target_record['notes'].replace(' ', '_')}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                                type="secondary"
+                            )
                 except Exception as e:
                     st.error(f"❌ ระบบออกรายงานขัดข้อง: {e}")
 
@@ -422,13 +434,21 @@ else:
                     )
 
                     if pdf_bytes:
+                        st.markdown("#### 👁️ ตัวอย่างรายงานก่อนพิมพ์")
+                        preview_html = build_report_preview_html(
+                            patient_name=patient_name, case_id=case_id,
+                            date_str=str(latest['date']), table_data=table_data,
+                            summary_text=sanitize_thai_text(db_summary), bullet_points=db_bullets
+                        )
+                        components.html(preview_html, height=760, scrolling=True)
+                        st.caption("พิมพ์ได้ทันทีจากปุ่ม 🖨️ ในตัวอย่างด้านบน หรือดาวน์โหลด PDF เก็บไว้ภายหลัง")
                         st.download_button(
-                            label="📄 ดาวน์โหลดรายงาน PDF",
+                            label="⬇️ ดาวน์โหลด PDF",
                             data=pdf_bytes,
                             file_name=f"{case_id}_{patient_name.replace(' ', '_')}.pdf",
                             mime="application/pdf",
-                            use_container_width=True,
-                            type="primary"
+                            use_container_width=False,
+                            type="secondary"
                         )
                 except Exception as e:
                     st.error(f"❌ ระบบออกรายงานขัดข้อง: {e}")
