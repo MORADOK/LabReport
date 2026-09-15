@@ -101,6 +101,39 @@ def init_db():
             cursor.execute("ALTER TABLE records ADD COLUMN clinical_bullets TEXT DEFAULT '[]'")
 
         cursor.execute("ALTER TABLE public.records ADD COLUMN IF NOT EXISTS diagnostics JSONB")
+        # Bounded retention: keep clinical/lab records, purge only transient workflow/debug data.
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION public.cleanup_ua_report()
+            RETURNS jsonb
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = public
+            AS $$
+            DECLARE
+              deleted_completed integer := 0;
+              deleted_stale integer := 0;
+              cleared_diag integer := 0;
+            BEGIN
+              DELETE FROM public.manual_cases
+              WHERE status='completed' AND completed_at < now() - interval '30 days';
+              GET DIAGNOSTICS deleted_completed = ROW_COUNT;
+              DELETE FROM public.manual_cases
+              WHERE status IN ('pending','processing') AND created_at < now() - interval '7 days';
+              GET DIAGNOSTICS deleted_stale = ROW_COUNT;
+              UPDATE public.records SET diagnostics=NULL
+              WHERE diagnostics IS NOT NULL AND diagnostics <> '{}'::jsonb
+                AND date < now() - interval '30 days';
+              GET DIAGNOSTICS cleared_diag = ROW_COUNT;
+              RETURN jsonb_build_object(
+                'completed_cases_deleted', deleted_completed,
+                'stale_cases_deleted', deleted_stale,
+                'diagnostics_cleared', cleared_diag,
+                'ran_at', now()
+              );
+            END;
+            $$;
+        """)
+        cursor.execute("REVOKE ALL ON FUNCTION public.cleanup_ua_report() FROM PUBLIC, anon, authenticated")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS public.manual_cases (
                 token TEXT PRIMARY KEY,
