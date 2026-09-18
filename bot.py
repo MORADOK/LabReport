@@ -163,11 +163,11 @@ def handle_text(event):
     text = event.message.text.strip()
     normalized_command = re.sub(r"\s+", " ", text.lower())
 
-    if normalized_command in {"บันทึกผล cybow", "กรอกผล cybow", "manual cybow", "บันทึกผลด้วยตา", "กรอกผลด้วยตา"}:
+    if normalized_command == "labua":
         user_states[user_id] = {"step": "manual_waiting_for_name"}
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="🧪 เริ่มบันทึกผล CYBOW 11M แบบพนักงานอ่านสี\nกรุณาพิมพ์ชื่อ-นามสกุลของผู้ป่วย")
+            TextSendMessage(text="🧪 LABUA — บันทึกผล Urinalysis (CYBOW 11M)\nกรุณาพิมพ์ชื่อ-นามสกุลของผู้ป่วย")
         )
         return
 
