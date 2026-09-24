@@ -13,7 +13,8 @@ from src.pdf_generator import create_pdf
 from src.report_preview import build_report_preview_html
 
 from src.analysis import load_data, create_trend_chart, parse_clinical_bullets, sanitize_thai_text
-from src.cybow_reference import CYBOW_11M_EXACT_REFERENCE, get_severity_level
+from src.report_mapping import get_report_mapping
+from src.report_narrative import build_neutral_narrative
 
 # ========================================
 # 🎨 Page Configuration
@@ -47,40 +48,8 @@ st.markdown("""
 # 🌟 Data Mapping (แปลงค่าดิบเป็น 4 คอลัมน์) - ใช้ CYBOW 11M Exact Reference
 # ========================================
 def get_cybow_mapping(param_code, raw_val):
-    """
-    แปลงค่าดิบจาก Database เป็น 4 คอลัมน์สำหรับแสดงในตาราง
-    ใช้ CYBOW_11M_EXACT_REFERENCE เป็นฐานข้อมูลอ้างอิง
-    """
-    val = str(raw_val).lower().strip()
-
-    # Handle N/A cases
-    if val in ["n/a", "-", "", "none"]:
-        return {"result": "N/A", "ref": "-", "color": "-", "status": "N/A"}
-
-    # Get severity level and color from reference
-    severity, color, status = get_severity_level(param_code, val)
-
-    # Get reference range
-    if param_code in CYBOW_11M_EXACT_REFERENCE:
-        ref_data = CYBOW_11M_EXACT_REFERENCE[param_code]
-        ref_range = ref_data.get("ref_range", "Negative")
-    else:
-        ref_range = "Negative"
-
-    # Format result based on parameter type and value
-    result = format_result_value(param_code, raw_val, severity)
-
-    return {"result": result, "ref": ref_range, "color": color, "status": status}
-
-
-def format_result_value(param_code, raw_val, severity):
-    """
-    จัดรูปแบบการแสดงผลให้เหมาะสมกับแต่ละพารามิเตอร์
-    """
-    # Preserve the exact recorded level and blood morphology in every report.
-    if severity == "unknown" or raw_val is None:
-        return "N/A"
-    return str(raw_val).strip()
+    """Map a stored result without rewriting the recorded CYBOW level."""
+    return get_report_mapping(param_code, raw_val)
 
 
 # Legacy function - kept for compatibility but redirects to new system
@@ -348,9 +317,7 @@ else:
                     table_data = prepare_table_data(target_record)
                     
                     # 🌟 Robust JSON parsing with Unicode escape handling + Text sanitization
-                    db_summary = target_record.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-                    raw_bullets = target_record.get('clinical_bullets', '[]')
-                    db_bullets = parse_clinical_bullets(raw_bullets, sanitize=True)
+                    db_summary, db_bullets = build_neutral_narrative(table_data)
 
                     pdf_bytes = create_pdf(
                         patient_name=target_record['notes'],
@@ -435,9 +402,7 @@ else:
                     table_data = prepare_table_data(latest)
                     
                     # 🌟 Robust JSON parsing with Unicode escape handling + Text sanitization
-                    db_summary = latest.get('clinical_summary', 'ไม่มีบันทึกข้อบ่งชี้ทางคลินิกในระบบ')
-                    raw_bullets = latest.get('clinical_bullets', '[]')
-                    db_bullets = parse_clinical_bullets(raw_bullets, sanitize=True)
+                    db_summary, db_bullets = build_neutral_narrative(table_data)
 
                     pdf_bytes = create_pdf(
                         patient_name=patient_name,

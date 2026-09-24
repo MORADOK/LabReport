@@ -7,10 +7,9 @@ def _esc(value):
 
 def _status_class(status):
     text = str(status or "")
-    if "Normal" in text: return "normal"
-    if text == "N/A": return "na"
-    if text in ("Positive", "Abnormal") or any(x in text for x in ("Trace","Small","Mod")): return "positive"
-    return "high"
+    if text in ("Within reference", "Not detected"): return "normal"
+    if text in ("N/A", "Unverified"): return "na"
+    return "positive"
 
 def build_report_preview_html(patient_name, case_id, date_str, table_data, summary_text, bullet_points):
     rows = []
