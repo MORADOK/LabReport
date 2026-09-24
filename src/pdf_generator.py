@@ -135,7 +135,7 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
     for idx, row in enumerate(table_data):
         pdf.set_fill_color(248, 250, 252) if idx % 2 == 0 else pdf.set_fill_color(255, 255, 255)
         status_text = str(row[4])
-        is_normal = status_text in ("Within reference", "Not detected")
+        is_normal = status_text.strip().lower() in ("within reference", "not detected", "normal", "negative", "recorded")
         for i in range(4):
             pdf.set_font("THSarabun", "B" if i == 0 else "", 10.5)
             if i == 2:
@@ -147,14 +147,13 @@ def create_pdf(patient_name, case_id, date_str, table_data, summary_text, bullet
             value = _compact_text(row[i], [31, 28, 23, 29][i])
             pdf.cell(col_widths[i], row_h, f" {value}", border="B", align="L", fill=True)
 
-        if status_text in ("Within reference", "Not detected"):
+        status_key = status_text.strip().lower()
+        if status_key in ("within reference", "not detected", "normal", "negative", "recorded"):
             pdf.set_text_color(22, 120, 60)
-        elif status_text == "N/A":
-            pdf.set_text_color(100, 116, 139)
-        elif status_text == "Unverified":
+        elif status_key in ("n/a", "unverified", ""):
             pdf.set_text_color(100, 116, 139)
         else:
-            pdf.set_text_color(194, 65, 12)
+            pdf.set_text_color(185, 28, 28)
         badge_text = status_text
         pdf.set_font("THSarabun", "B", 10)
         pdf.cell(col_widths[4], row_h, badge_text, border="B", align="C", fill=True)

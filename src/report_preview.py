@@ -6,10 +6,10 @@ def _esc(value):
     return html.escape(str(value if value is not None else ""))
 
 def _status_class(status):
-    text = str(status or "")
-    if text in ("Within reference", "Not detected"): return "normal"
-    if text in ("N/A", "Unverified"): return "na"
-    return "positive"
+    text = str(status or "").strip().lower()
+    if text in ("within reference", "not detected", "normal", "negative", "recorded"): return "normal"
+    if text in ("n/a", "unverified", ""): return "na"
+    return "abnormal"
 
 def build_report_preview_html(patient_name, case_id, date_str, table_data, summary_text, bullet_points):
     rows = []
@@ -41,7 +41,7 @@ def build_report_preview_html(patient_name, case_id, date_str, table_data, summa
 table{{width:100%;border-collapse:collapse;font-size:9.5px}}thead th{{background:#1e3a8a;color:white;padding:5px 4px;text-align:center}}
 tbody td{{padding:4.5px 4px;border-bottom:1px solid #e2e8f0;vertical-align:middle}}tbody tr:nth-child(odd){{background:#f8fafc}}
 .param{{font-weight:700}}.muted{{color:#64748b}}.badge{{display:inline-block;border-radius:999px;padding:2px 6px;font-weight:700;font-size:8.5px;white-space:nowrap}}
-.normal{{background:#dcfce7;color:#166534}}.positive{{background:#ffedd5;color:#9a3412}}.high{{background:#fee2e2;color:#991b1b}}.na{{background:#e2e8f0;color:#475569}}
+.normal{{background:#dcfce7;color:#166534}}.abnormal{{background:#fee2e2;color:#b91c1c}}.positive{{background:#fee2e2;color:#b91c1c}}.high{{background:#fee2e2;color:#991b1b}}.na{{background:#e2e8f0;color:#475569}}
 .notes{{margin-top:8px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;padding:6px 9px;font-size:9.5px}}.notes b{{color:#1d4ed8}}.notes ul{{margin:3px 0 0 16px;padding:0}}.notes li{{margin:1px 0}}
 .footer{{text-align:center;color:#64748b;font-size:8px;margin-top:7px;padding-top:4px;border-top:1px solid #e2e8f0}}
 @media(max-width:650px){{.sheet{{padding:10px 8px}}.info{{grid-template-columns:1fr}}table{{font-size:8px}}thead th,tbody td{{padding:3px 2px}}}}
