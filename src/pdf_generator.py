@@ -39,7 +39,7 @@ class LHomePDFReport(FPDF):
             "เอกสารสร้างโดยระบบสำหรับการประเมินคัดกรองเบื้องต้น • ควรแปลผลร่วมกับข้อมูลทางคลินิก",
             align="C", new_x="LMARGIN", new_y="NEXT",
         )
-        self.cell(0, 3, f"LHome Facility • หน้า {self.page_no()}", align="C")
+        self.cell(0, 3, f"Home Hospital Lab • หน้า {self.page_no()}", align="C")
 
 
 def _compact_text(value, max_chars):

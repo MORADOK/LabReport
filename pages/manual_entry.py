@@ -28,6 +28,12 @@ PARAMETERS = [
 
 st.markdown("""
 <style>
+#MainMenu {visibility: hidden;}
+header[data-testid="stHeader"] {display: none;}
+[data-testid="stToolbar"] {display: none;}
+[data-testid="stDecoration"] {display: none;}
+[data-testid="stStatusWidget"] {display: none;}
+footer {visibility: hidden;}
 .block-container {max-width: 1200px; padding-top: 1.5rem;}
 .ref-note {padding:12px 14px; border-radius:12px; background:#f8fafc; border:1px solid #dbe4ee; margin-bottom:16px;}
 .test-card {padding:12px 14px 8px; border:1px solid #e2e8f0; border-radius:14px; background:#fff; margin:7px 0 12px; box-shadow:0 1px 3px rgba(0,0,0,.03);}

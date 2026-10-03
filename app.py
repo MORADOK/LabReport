@@ -1,11 +1,14 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="LHome Medical | Urine Tracker",
+    page_title="Home Hospital Lab | Urine Tracker",
     page_icon="🏥",
     layout="centered",
     initial_sidebar_state="expanded"
 )
+
+# หน้า entrypoint มีไว้รองรับ URL หลักเท่านั้น: ส่งผู้ใช้เข้า Dashboard ทันที
+st.switch_page("pages/dashboard.py")
 
 # Custom CSS เพื่อตกแต่ง Card ให้ดูทันสมัย
 st.markdown("""
@@ -33,7 +36,7 @@ st.markdown("""
 # ส่วน Header
 st.markdown("""
     <div class="main-card">
-        <h1 style='color: #0066cc; margin-bottom: 0;'>🏥 LHome Urine Tracker</h1>
+        <h1 style='color: #0066cc; margin-bottom: 0;'>🏥 Home Hospital Lab</h1>
         <p style='color: #64748b; font-size: 1.1rem;'>ระบบวิเคราะห์และจัดการผลตรวจปัสสาวะ CYBOW 11M อัตโนมัติ</p>
     </div>
 """, unsafe_allow_html=True)
@@ -50,4 +53,4 @@ with col2:
     st.caption("หน้านี้ยังไม่ได้ตรวจการเชื่อมต่อ AI, LINE หรือฐานข้อมูลแบบเรียลไทม์")
 
 st.divider()
-st.caption("© 2026 LHome Medical Center - Developed with Python & Streamlit")
+st.caption("© 2026 Home Hospital Lab Center - Developed with Python & Streamlit")

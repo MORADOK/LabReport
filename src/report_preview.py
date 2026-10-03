@@ -53,4 +53,4 @@ tbody td{{padding:4.5px 4px;border-bottom:1px solid #e2e8f0;vertical-align:middl
 <div class='summary'><b>สรุปผล:</b> {_esc(summary_text)}</div>
 <table><thead><tr><th>พารามิเตอร์</th><th>ค่าที่อ่านได้</th><th>ค่ามาตรฐาน</th><th>แถบสี</th><th>สถานะ</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 <div class='notes'><b>ข้อบ่งชี้ทางคลินิกและคำแนะนำ</b><ul>{bullet_html or '<li>-</li>'}</ul></div>
-<div class='footer'>เอกสารนี้ใช้สำหรับการประเมินคัดกรองเบื้องต้น ควรแปลผลร่วมกับข้อมูลทางคลินิก • LHome Facility</div></main></body></html>"""
+<div class='footer'>เอกสารนี้ใช้สำหรับการประเมินคัดกรองเบื้องต้น ควรแปลผลร่วมกับข้อมูลทางคลินิก • Home Hospital Lab</div></main></body></html>"""

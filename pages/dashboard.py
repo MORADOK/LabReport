@@ -20,7 +20,7 @@ from src.report_narrative import build_neutral_narrative
 # 🎨 Page Configuration
 # ========================================
 st.set_page_config(
-    page_title="LHome Medical Dashboard",
+    page_title="Home Hospital Lab Dashboard",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -31,6 +31,13 @@ st.set_page_config(
 # ========================================
 st.markdown("""
 <style>
+    /* Home Hospital Platform provides the outer shell; hide Streamlit chrome/branding. */
+    #MainMenu {visibility: hidden;}
+    header[data-testid="stHeader"] {display: none;}
+    [data-testid="stToolbar"] {display: none;}
+    [data-testid="stDecoration"] {display: none;}
+    [data-testid="stStatusWidget"] {display: none;}
+    footer {visibility: hidden;}
     .main-header { font-size: 2.5rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.5rem; text-align: center; }
     .sub-header { font-size: 1.1rem; color: #64748b; text-align: center; margin-bottom: 2rem; }
     div[data-testid="metric-container"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -232,7 +239,7 @@ else:
 # ========================================
 # 🎨 Header Section
 # ========================================
-st.markdown('<h1 class="main-header">🏥 LHome Medical Dashboard</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">🏥 Home Hospital Lab Dashboard</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">ระบบวิเคราะห์ผลตรวจปัสสาวะด้วย AI | Urine Analysis System</p>', unsafe_allow_html=True)
 
 if df.empty:
@@ -453,5 +460,5 @@ else:
 # 📌 Footer
 # ========================================
 st.sidebar.markdown("---")
-st.sidebar.markdown("### ℹ️ ข้อมูลระบบ\n- 🏥 **LHome Medical**\n- 🤖 **AI-Powered Analysis**\n- 📊 **Real-time Dashboard**\n- 🔒 **Secure & Private**")
-st.sidebar.caption("© 2024 LHome Medical System")
+st.sidebar.markdown("### ℹ️ ข้อมูลระบบ\n- 🏥 **Home Hospital Lab**\n- 🤖 **AI-Powered Analysis**\n- 📊 **Real-time Dashboard**\n- 🔒 **Secure & Private**")
+st.sidebar.caption("© 2024 Home Hospital Lab System")

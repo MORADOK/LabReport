@@ -116,7 +116,7 @@ def initialize_database_schema():
 
 @app.get("/")
 def keep_alive():
-    return {"status": "LHome Bot is awake and running!"}
+    return {"status": "Home Hospital Lab Bot is awake and running!"}
 
 @app.get("/manual-entry", response_class=HTMLResponse)
 def manual_entry_page(case: str = ""):
@@ -418,7 +418,7 @@ Do not return guessed RGB or confidence percentages. Do not infer patient diagno
                 f"📝 สรุปผล:\n{data.get('clinical_summary', '')}\n\n"
                 "คะแนนความแม่นยำ: ยังไม่มีข้อมูลสอบเทียบ\n"
                 + (("⚠️ ค่าก้ำกึ่งจากภาพ: " + ", ".join(borderline) + "\nควรเทียบกับแถบจริงก่อนใช้ประกอบการตัดสินใจ\n\n") if borderline else "\n")
-                + f"สามารถกดดูรายงาน PDF ฉบับเต็มได้ที่ระบบ LHome Dashboard ครับ!"
+                + f"สามารถกดดูรายงาน PDF ฉบับเต็มได้ที่ระบบ Home Hospital Lab Dashboard ครับ!"
             )
             line_bot_api.push_message(user_id, TextSendMessage(text=reply_msg))
         else:
