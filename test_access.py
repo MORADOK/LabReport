@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from src.access import _accounts, _fingerprint
+from src.access import _accounts, _fingerprint, _remember_token, _verify_remember_token
 
 
 class AccessTests(unittest.TestCase):
@@ -34,6 +34,18 @@ class AccessTests(unittest.TestCase):
             _fingerprint("staff", "pw"),
             _fingerprint("admin", "pw"),
         )
+
+    def test_remember_token_is_signed_and_expires(self):
+        accounts = [{"role": "admin", "password": "secret", "label": "Admin"}]
+        token = _remember_token("admin", "secret", 2000)
+        self.assertEqual(_verify_remember_token(token, accounts, now=1000)["role"], "admin")
+        self.assertIsNone(_verify_remember_token(token, accounts, now=2000))
+        self.assertIsNone(_verify_remember_token(token + "x", accounts, now=1000))
+
+    def test_remember_token_invalidates_when_password_changes(self):
+        token = _remember_token("admin", "old-secret", 2000)
+        changed = [{"role": "admin", "password": "new-secret", "label": "Admin"}]
+        self.assertIsNone(_verify_remember_token(token, changed, now=1000))
 
     def test_same_password_would_match_first_account_so_should_be_avoided(self):
         with patch.dict(
