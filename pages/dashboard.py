@@ -31,13 +31,20 @@ st.set_page_config(
 # ========================================
 st.markdown("""
 <style>
-    /* Home Hospital Platform provides the outer shell; hide Streamlit chrome/branding. */
-    #MainMenu {visibility: hidden;}
-    header[data-testid="stHeader"] {display: none;}
-    [data-testid="stToolbar"] {display: none;}
-    [data-testid="stDecoration"] {display: none;}
-    [data-testid="stStatusWidget"] {display: none;}
-    footer {visibility: hidden;}
+    /* Home Hospital Platform provides the outer shell; hide Streamlit chrome/branding and multipage navigation. */
+    #MainMenu {display: none !important;}
+    header[data-testid="stHeader"] {display: none !important;}
+    [data-testid="stToolbar"] {display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    [data-testid="stStatusWidget"] {display: none !important;}
+    [data-testid="stSidebarNav"] {display: none !important;}
+    [data-testid="stSidebarNavItems"] {display: none !important;}
+    [data-testid="stSidebarNavSeparator"] {display: none !important;}
+    footer {display: none !important;}
+    .viewerBadge_container__r5tak,
+    .viewerBadge_link__qRIco,
+    [class*="viewerBadge"],
+    [data-testid="manage-app-button"] {display: none !important;}
     .main-header { font-size: 2.5rem; font-weight: 700; color: #1e3a8a; margin-bottom: 0.5rem; text-align: center; }
     .sub-header { font-size: 1.1rem; color: #64748b; text-align: center; margin-bottom: 2rem; }
     div[data-testid="metric-container"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
